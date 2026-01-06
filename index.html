@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>مدير المخزون الذكي | Smart Inventory (Cloud + Local)</title>
+  <title>مدير المخزون الذكي | Smart Inventory (Cloud + Local Per User)</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;500;700;900&display=swap" rel="stylesheet">
@@ -339,7 +339,7 @@ email;pass;recovery;url"></textarea>
             <div id="moveButtonsWrap" class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2"></div>
 
             <p class="text-center text-[11px] text-slate-300">
-              ✅ آخر حساب مسحوب يبقى محفوظ محلياً + سحابياً حتى لو خرجت ورجعت لاحقاً.
+              ✅ الآن كل مستخدم له مخزون خاص (محلي + سحابي) وليس مشترك.
             </p>
           </div>
 
@@ -436,7 +436,7 @@ email;pass;recovery;url"></textarea>
         </div>
 
         <p class="text-[12px] text-slate-300">
-          ✅ بعد الدخول كل بيانات المخزون تنحفظ محلياً بسرعة + بالسحابة تلقائياً.
+          ✅ كل مستخدم له مخزون خاص به (ليس مشترك).
         </p>
       </div>
     </div>
@@ -590,31 +590,44 @@ email;pass;recovery;url"></textarea>
       }
 
       // =========================
-      // ✅ بيانات التطبيق (مثل كودك)
+      // ✅ قيم افتراضية (حتى كل مستخدم جديد يبدأ فاضي)
       // =========================
       const GO_ID = 'gemini';
       const NEW_GEMINI_ID = 'gemini_new';
 
-      let inventoriesMeta = [
-        { id:'main', name:'الأساسي', type:'legacy-main' },
-        { id:GO_ID, name:'Go', type:'legacy-gemini' },
-        { id:NEW_GEMINI_ID, name:'Gemini', type:'custom' }
-      ];
+      function defaultState(){
+        return {
+          inventoriesMeta: [
+            { id:'main', name:'الأساسي', type:'legacy-main' },
+            { id:GO_ID, name:'Go', type:'legacy-gemini' },
+            { id:NEW_GEMINI_ID, name:'Gemini', type:'custom' }
+          ],
+          activeInvId: 'main',
+          store: {
+            main: { inventory: [], pulledCounter: 0, currentAccount: null },
+            gemini: { inventory: [], pulledCounter: 0, currentAccount: null },
+            gemini_new: { inventory: [], pulledCounter: 0, currentAccount: null }
+          },
+          quickLinks: [
+            { id:'l1', name:'التحقق من ChatGPT', url:'https://batch.1key.me/' },
+            { id:'l2', name:'بوت التحقق', url:'https://t.me/Veriyferbot' }
+          ]
+        };
+      }
 
-      let activeInvId = 'main';
+      // متغيرات التطبيق (تنملأ من default أو من local أو من cloud)
+      let inventoriesMeta = defaultState().inventoriesMeta;
+      let activeInvId = defaultState().activeInvId;
+      let store = defaultState().store;
+      let quickLinks = defaultState().quickLinks;
 
-      // store: { [invId]: { inventory:[], pulledCounter:0, currentAccount:null } }
-      let store = {
-        main: { inventory: [], pulledCounter: 0, currentAccount: null },
-        gemini: { inventory: [], pulledCounter: 0, currentAccount: null },
-        gemini_new: { inventory: [], pulledCounter: 0, currentAccount: null }
-      };
-
-      // Links
-      let quickLinks = [
-        { id:'l1', name:'التحقق من ChatGPT', url:'https://batch.1key.me/' },
-        { id:'l2', name:'بوت التحقق', url:'https://t.me/Veriyferbot' }
-      ];
+      function resetToDefaults(){
+        const d = defaultState();
+        inventoriesMeta = d.inventoriesMeta;
+        activeInvId = d.activeInvId;
+        store = d.store;
+        quickLinks = d.quickLinks;
+      }
 
       function S(){
         if(!store[activeInvId]) store[activeInvId] = { inventory: [], pulledCounter: 0, currentAccount: null };
@@ -622,9 +635,12 @@ email;pass;recovery;url"></textarea>
       }
 
       // =========================
-      // ✅ Local Storage (محلي سريع)
+      // ✅ Local Storage (لكل مستخدم)
       // =========================
-      const LOCAL_KEY = 'smartInv_local_v1';
+      const LOCAL_PREFIX = 'smartInv_local_v1_';
+      function localKeyFor(uid){
+        return LOCAL_PREFIX + String(uid || 'guest');
+      }
 
       function buildState(mode='local'){
         return {
@@ -639,36 +655,34 @@ email;pass;recovery;url"></textarea>
         };
       }
 
-      function localSave(state){
+      function localSaveFor(uid){
         try{
-          localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
+          localStorage.setItem(localKeyFor(uid), JSON.stringify(buildState('local')));
         }catch(e){
           showToast('تعذر الحفظ محلياً (قد تكون مساحة التخزين ممتلئة).', 'error');
         }
       }
 
-      function localLoadOnce(){
-        const local = safeJsonParse(localStorage.getItem(LOCAL_KEY), null);
+      function localLoadFor(uid){
+        const key = localKeyFor(uid);
+        const local = safeJsonParse(localStorage.getItem(key), null);
         if(local && typeof local === 'object'){
-          applyCloudState(local); // نفس البنية
+          applyAnyState(local);
+          return true;
         }
+        return false;
       }
 
       let localSaveTimer = null;
-      function localSaveDebounced(){
+      function localSaveDebounced(uid){
         clearTimeout(localSaveTimer);
         localSaveTimer = setTimeout(() => {
-          localSave(buildState('local'));
+          localSaveFor(uid);
         }, 200);
       }
 
-      function persistDebounced(){
-        localSaveDebounced();
-        if(currentUser) cloudSaveDebounced();
-      }
-
       // =========================
-      // ✅ Cloud Storage (Firestore)
+      // ✅ Cloud Storage (Firestore) - لكل مستخدم
       // =========================
       let currentUser = null;
       let unsubRealtime = null;
@@ -692,13 +706,18 @@ email;pass;recovery;url"></textarea>
         }
       }
 
-      // حفظ سحابي (debounce)
       let saveTimer = null;
       function cloudSaveDebounced(){
         clearTimeout(saveTimer);
         saveTimer = setTimeout(() => {
           cloudSave(buildState('cloud'));
         }, 700);
+      }
+
+      function persistDebounced(){
+        const uid = currentUser ? currentUser.uid : 'guest';
+        localSaveDebounced(uid);
+        if(currentUser) cloudSaveDebounced();
       }
 
       function startRealtime(){
@@ -708,10 +727,10 @@ email;pass;recovery;url"></textarea>
         unsubRealtime = userDocRef(currentUser.uid).onSnapshot((snap)=>{
           if(!snap.exists) return;
           const data = snap.data();
-          applyCloudState(data);
+          applyAnyState(data);
 
-          // ✅ أي تحديث من السحابة نخزنه محلياً أيضاً
-          localSaveDebounced();
+          // نخزن نسخة محلية لهذا المستخدم فقط
+          localSaveDebounced(currentUser.uid);
 
           cloudStatus.textContent = 'متصل ✅';
           cloudStatus.className = 'font-bold text-emerald-300';
@@ -721,7 +740,10 @@ email;pass;recovery;url"></textarea>
         });
       }
 
-      function applyCloudState(state){
+      // =========================
+      // ✅ تطبيق الحالة (سواء من محلي أو سحابة)
+      // =========================
+      function applyAnyState(state){
         if(!state) return;
         if(Array.isArray(state.inventoriesMeta)) inventoriesMeta = state.inventoriesMeta;
         if(typeof state.activeInvId === 'string') activeInvId = state.activeInvId;
@@ -1260,8 +1282,11 @@ email;pass;recovery;url"></textarea>
         document.body.classList.remove('modal-open');
       }
 
-      // ✅ أول شيء: حمّل البيانات من المحلي حتى يصير سريع
-      localLoadOnce();
+      // ✅ مهم: عند بداية الصفحة نعرض الافتراضي فقط (بدون تحميل محلي عام)
+      updateHeaderTitle();
+      buildTabs();
+      updateUI();
+      renderMoveButtons();
 
       // Init + Auth state
       auth.onAuthStateChanged(async (user) => {
@@ -1271,6 +1296,14 @@ email;pass;recovery;url"></textarea>
           userLabel.textContent = '---';
           cloudStatus.textContent = 'غير متصل';
           cloudStatus.className = 'font-bold text-amber-300';
+
+          // نفرّغ الذاكرة لو كان مستخدم سابق حتى ما يصير خلط
+          resetToDefaults();
+          updateHeaderTitle();
+          buildTabs();
+          updateUI();
+          renderMoveButtons();
+
           openAuth();
           return;
         }
@@ -1279,15 +1312,30 @@ email;pass;recovery;url"></textarea>
         userLabel.textContent = (currentUser.email || currentUser.uid).slice(0, 32);
         closeAuth();
 
-        // أول مرة: إذا ماكو بيانات بالسحابة، نخزن افتراضي
+        // 1) حمّل المحلي لهذا المستخدم فقط (سريع)
+        const hasLocal = localLoadFor(currentUser.uid);
+        if(hasLocal){
+          buildTabs();
+          setActiveInventory(activeInvId, true);
+          updateUI();
+          renderMoveButtons();
+        }
+
+        // 2) ثم اقرأ السحابة (الأصح)
         try{
           const snap = await userDocRef(currentUser.uid).get();
+
           if(!snap.exists){
+            // مستخدم جديد: لا ننسخ بيانات "غيره"
+            // إذا عنده محلي خاص به (قديمة) نخزنها، وإلا نخزن الافتراضي
+            if(!hasLocal){
+              resetToDefaults();
+            }
             await cloudSave(buildState('cloud'));
-            localSaveDebounced();
+            localSaveDebounced(currentUser.uid);
           }else{
-            applyCloudState(snap.data());
-            localSaveDebounced();
+            applyAnyState(snap.data());
+            localSaveDebounced(currentUser.uid);
           }
         }catch(e){
           showToast('تعذر قراءة بيانات السحابة (Rules)', 'error');
@@ -1340,11 +1388,6 @@ email;pass;recovery;url"></textarea>
         requestAnimationFrame(snowTick);
       }
       snowTick();
-
-      // افتراضي UI
-      updateHeaderTitle();
-      buildTabs();
-      updateUI();
     })();
   </script>
 </body>
