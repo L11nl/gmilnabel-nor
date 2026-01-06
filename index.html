@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>مدير المخزون الذكي | Smart Inventory (Cloud)</title>
+  <title>مدير المخزون الذكي | Smart Inventory (Cloud + Local)</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;500;700;900&display=swap" rel="stylesheet">
@@ -339,7 +339,7 @@ email;pass;recovery;url"></textarea>
             <div id="moveButtonsWrap" class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2"></div>
 
             <p class="text-center text-[11px] text-slate-300">
-              ✅ آخر حساب مسحوب يبقى محفوظ سحابياً حتى لو خرجت ورجعت لاحقاً.
+              ✅ آخر حساب مسحوب يبقى محفوظ محلياً + سحابياً حتى لو خرجت ورجعت لاحقاً.
             </p>
           </div>
 
@@ -436,7 +436,7 @@ email;pass;recovery;url"></textarea>
         </div>
 
         <p class="text-[12px] text-slate-300">
-          ✅ بعد الدخول كل بيانات المخزون تنحفظ بالسحابة تلقائياً.
+          ✅ بعد الدخول كل بيانات المخزون تنحفظ محلياً بسرعة + بالسحابة تلقائياً.
         </p>
       </div>
     </div>
@@ -525,57 +525,6 @@ email;pass;recovery;url"></textarea>
       const userLabel = document.getElementById('userLabel');
 
       // =========================
-      // ✅ Cloud Storage (Firestore)
-      // =========================
-      let currentUser = null;
-      let unsubRealtime = null;
-
-      function userDocRef(uid){
-        return db.collection('users').doc(uid).collection('smartInv').doc('state');
-      }
-
-      async function cloudSave(state){
-        if(!currentUser) return;
-        cloudStatus.textContent = 'يتم الحفظ...';
-        cloudStatus.className = 'font-bold text-amber-300';
-        try{
-          await userDocRef(currentUser.uid).set(state, { merge: true });
-          cloudStatus.textContent = 'متصل ✅';
-          cloudStatus.className = 'font-bold text-emerald-300';
-        }catch(e){
-          cloudStatus.textContent = 'فشل اتصال';
-          cloudStatus.className = 'font-bold text-rose-300';
-          showToast('تعذر الحفظ بالسحابة (تأكد من القواعد Rules).', 'error');
-        }
-      }
-
-      // حفظ تلقائي (debounce)
-      let saveTimer = null;
-      function cloudSaveDebounced(){
-        clearTimeout(saveTimer);
-        saveTimer = setTimeout(() => {
-          cloudSave(buildCloudState());
-        }, 700);
-      }
-
-      function startRealtime(){
-        if(!currentUser) return;
-        if(unsubRealtime) unsubRealtime();
-
-        unsubRealtime = userDocRef(currentUser.uid).onSnapshot((snap)=>{
-          if(!snap.exists) return;
-          const data = snap.data();
-          // نحدّث الحالة من السحابة
-          applyCloudState(data);
-          cloudStatus.textContent = 'متصل ✅';
-          cloudStatus.className = 'font-bold text-emerald-300';
-        }, ()=>{
-          cloudStatus.textContent = 'فشل اتصال';
-          cloudStatus.className = 'font-bold text-rose-300';
-        });
-      }
-
-      // =========================
       // Toast
       // =========================
       function flash(el){
@@ -641,7 +590,7 @@ email;pass;recovery;url"></textarea>
       }
 
       // =========================
-      // ✅ بيانات التطبيق (نفس منطقك بس صارت بالسحابة)
+      // ✅ بيانات التطبيق (مثل كودك)
       // =========================
       const GO_ID = 'gemini';
       const NEW_GEMINI_ID = 'gemini_new';
@@ -672,19 +621,107 @@ email;pass;recovery;url"></textarea>
         return store[activeInvId];
       }
 
-      function buildCloudState(){
+      // =========================
+      // ✅ Local Storage (محلي سريع)
+      // =========================
+      const LOCAL_KEY = 'smartInv_local_v1';
+
+      function buildState(mode='local'){
         return {
           v: 1,
           inventoriesMeta,
           activeInvId,
           store,
           quickLinks,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          updatedAt: (mode === 'cloud')
+            ? firebase.firestore.FieldValue.serverTimestamp()
+            : Date.now()
         };
       }
 
+      function localSave(state){
+        try{
+          localStorage.setItem(LOCAL_KEY, JSON.stringify(state));
+        }catch(e){
+          showToast('تعذر الحفظ محلياً (قد تكون مساحة التخزين ممتلئة).', 'error');
+        }
+      }
+
+      function localLoadOnce(){
+        const local = safeJsonParse(localStorage.getItem(LOCAL_KEY), null);
+        if(local && typeof local === 'object'){
+          applyCloudState(local); // نفس البنية
+        }
+      }
+
+      let localSaveTimer = null;
+      function localSaveDebounced(){
+        clearTimeout(localSaveTimer);
+        localSaveTimer = setTimeout(() => {
+          localSave(buildState('local'));
+        }, 200);
+      }
+
+      function persistDebounced(){
+        localSaveDebounced();
+        if(currentUser) cloudSaveDebounced();
+      }
+
+      // =========================
+      // ✅ Cloud Storage (Firestore)
+      // =========================
+      let currentUser = null;
+      let unsubRealtime = null;
+
+      function userDocRef(uid){
+        return db.collection('users').doc(uid).collection('smartInv').doc('state');
+      }
+
+      async function cloudSave(state){
+        if(!currentUser) return;
+        cloudStatus.textContent = 'يتم الحفظ...';
+        cloudStatus.className = 'font-bold text-amber-300';
+        try{
+          await userDocRef(currentUser.uid).set(state, { merge: true });
+          cloudStatus.textContent = 'متصل ✅';
+          cloudStatus.className = 'font-bold text-emerald-300';
+        }catch(e){
+          cloudStatus.textContent = 'فشل اتصال';
+          cloudStatus.className = 'font-bold text-rose-300';
+          showToast('تعذر الحفظ بالسحابة (تأكد من القواعد Rules).', 'error');
+        }
+      }
+
+      // حفظ سحابي (debounce)
+      let saveTimer = null;
+      function cloudSaveDebounced(){
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          cloudSave(buildState('cloud'));
+        }, 700);
+      }
+
+      function startRealtime(){
+        if(!currentUser) return;
+        if(unsubRealtime) unsubRealtime();
+
+        unsubRealtime = userDocRef(currentUser.uid).onSnapshot((snap)=>{
+          if(!snap.exists) return;
+          const data = snap.data();
+          applyCloudState(data);
+
+          // ✅ أي تحديث من السحابة نخزنه محلياً أيضاً
+          localSaveDebounced();
+
+          cloudStatus.textContent = 'متصل ✅';
+          cloudStatus.className = 'font-bold text-emerald-300';
+        }, ()=>{
+          cloudStatus.textContent = 'فشل اتصال';
+          cloudStatus.className = 'font-bold text-rose-300';
+        });
+      }
+
       function applyCloudState(state){
-        // حماية
         if(!state) return;
         if(Array.isArray(state.inventoriesMeta)) inventoriesMeta = state.inventoriesMeta;
         if(typeof state.activeInvId === 'string') activeInvId = state.activeInvId;
@@ -746,11 +783,8 @@ email;pass;recovery;url"></textarea>
         setStockCounterColor(s.inventory.length);
 
         const last = s.currentAccount;
-        if (last) {
-          displayResult(last);
-        } else {
-          resultAreaEl.classList.add('hidden');
-        }
+        if (last) displayResult(last);
+        else resultAreaEl.classList.add('hidden');
       }
 
       function setActiveInventory(id, silent=false){
@@ -760,7 +794,7 @@ email;pass;recovery;url"></textarea>
         buildTabs();
         updateUI();
         renderMoveButtons();
-        if(!silent) cloudSaveDebounced();
+        if(!silent) persistDebounced();
       }
 
       function createNewInventory(){
@@ -777,7 +811,7 @@ email;pass;recovery;url"></textarea>
         buildTabs();
         setActiveInventory(id);
         showToast('تم إنشاء مخزون جديد ✅', 'success');
-        cloudSaveDebounced();
+        persistDebounced();
       }
 
       function parseStandardLine(line) {
@@ -808,7 +842,7 @@ email;pass;recovery;url"></textarea>
         }
 
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         return { addedCount, duplicateCount, invalidCount };
       }
 
@@ -835,7 +869,7 @@ email;pass;recovery;url"></textarea>
         s.pulledCounter++;
         displayResult(acc);
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast('تم سحب الحساب بنجاح', 'success');
       }
 
@@ -850,7 +884,7 @@ email;pass;recovery;url"></textarea>
         s.currentAccount = null;
 
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast('تم تصفير المخزون', 'success');
       }
 
@@ -888,7 +922,7 @@ email;pass;recovery;url"></textarea>
         if (!s.currentAccount) { showToast('لا يوجد حساب مسحوب.', 'error'); return; }
         s.currentAccount = null;
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast('تم حذف الحساب من الشاشة', 'success');
       }
 
@@ -901,7 +935,7 @@ email;pass;recovery;url"></textarea>
         if (s.pulledCounter > 0) s.pulledCounter--;
         s.currentAccount = null;
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast('تم استرجاع الحساب إلى المخزون', 'success');
       }
 
@@ -923,7 +957,7 @@ email;pass;recovery;url"></textarea>
         sMain.currentAccount = null;
 
         updateUI();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast(`تم نقل الحساب إلى مخزون ${targetLabel}`, 'success');
       }
 
@@ -1003,7 +1037,7 @@ email;pass;recovery;url"></textarea>
         buildTabs();
         setActiveInventory(activeInvId);
         renderSettingsInventories();
-        cloudSaveDebounced();
+        persistDebounced();
         showToast('تم حذف المخزون ✅', 'success');
       }
 
@@ -1057,7 +1091,7 @@ email;pass;recovery;url"></textarea>
         const tmp = quickLinks[i];
         quickLinks[i] = quickLinks[j];
         quickLinks[j] = tmp;
-        cloudSaveDebounced();
+        persistDebounced();
         renderLinks();
       }
 
@@ -1066,7 +1100,7 @@ email;pass;recovery;url"></textarea>
         if (!item) return;
         if (!confirm(`إزالة الرابط: ${item.name} ؟`)) return;
         quickLinks = quickLinks.filter(x => x.id !== id);
-        cloudSaveDebounced();
+        persistDebounced();
         renderLinks();
         showToast('تم إزالة الرابط', 'success');
       }
@@ -1144,7 +1178,7 @@ email;pass;recovery;url"></textarea>
 
         const id = 'l_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6);
         quickLinks.push({ id, name: String(name).trim(), url });
-        cloudSaveDebounced();
+        persistDebounced();
         renderLinks();
         showToast('تمت إضافة الرابط ✅', 'success');
       }
@@ -1226,6 +1260,9 @@ email;pass;recovery;url"></textarea>
         document.body.classList.remove('modal-open');
       }
 
+      // ✅ أول شيء: حمّل البيانات من المحلي حتى يصير سريع
+      localLoadOnce();
+
       // Init + Auth state
       auth.onAuthStateChanged(async (user) => {
         currentUser = user || null;
@@ -1246,9 +1283,11 @@ email;pass;recovery;url"></textarea>
         try{
           const snap = await userDocRef(currentUser.uid).get();
           if(!snap.exists){
-            await cloudSave(buildCloudState());
+            await cloudSave(buildState('cloud'));
+            localSaveDebounced();
           }else{
             applyCloudState(snap.data());
+            localSaveDebounced();
           }
         }catch(e){
           showToast('تعذر قراءة بيانات السحابة (Rules)', 'error');
