@@ -1,1145 +1,1312 @@
-<script type="module">
-  // =========================
-  // ✅ Firebase (Local + Cloud)
-  // =========================
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-  import {
-    getAuth,
-    onAuthStateChanged,
-    signInWithEmailAndPassword,
-    createUserWithEmailAndPassword,
-    signOut
-  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>مدير المخزون الذكي | Smart Inventory (Cloud)</title>
 
-  import {
-    getFirestore,
-    doc,
-    getDoc,
-    setDoc,
-    onSnapshot
-  } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;500;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-  // ✅ إعدادات مشروعك (نفس اللي دزّيته)
-  const firebaseConfig = {
-    apiKey: "AIzaSyC4Q4qTILDP4eYuo8OpER_NQ4udj5lXSwM",
-    authDomain: "nabeel-abd.firebaseapp.com",
-    projectId: "nabeel-abd",
-    storageBucket: "nabeel-abd.firebasestorage.app",
-    messagingSenderId: "397355019788",
-    appId: "1:397355019788:web:9d1961a81f62d06f44c829",
-    measurementId: "G-9ES5BKWRVH"
-  };
+  <!-- ✅ Firebase (CDN - compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore-compat.js"></script>
 
-  const appFB = initializeApp(firebaseConfig);
-  const auth = getAuth(appFB);
-  const db = getFirestore(appFB);
-
-  // =========================
-  // ✅ تطبيقك الأصلي (مع Cloud Sync)
-  // =========================
-  (function () {
-    const stockCountEl = document.getElementById('stockCount');
-    const pulledCountEl = document.getElementById('pulledCount');
-    const titleNameEl = document.getElementById('titleName');
-
-    const tabsWrap = document.getElementById('tabsWrap');
-    const addInvBtn = document.getElementById('addInvBtn');
-    const settingsBtn = document.getElementById('settingsBtn');
-
-    const linksBtn = document.getElementById('linksBtn');
-    const linksModal = document.getElementById('linksModal');
-    const closeLinksBtn = document.getElementById('closeLinksBtn');
-    const addLinkBtn = document.getElementById('addLinkBtn');
-    const linksWrap = document.getElementById('linksWrap');
-
-    const settingsModal = document.getElementById('settingsModal');
-    const closeSettingsBtn = document.getElementById('closeSettingsBtn');
-    const invListWrap = document.getElementById('invListWrap');
-
-    const inputSectionEl = document.getElementById('inputSection');
-    const bulkInputEl = document.getElementById('bulkInput');
-
-    const resultAreaEl = document.getElementById('resultArea');
-    const timestampEl = document.getElementById('timestamp');
-
-    const emailDisplayEl = document.getElementById('emailDisplay');
-    const passDisplayEl = document.getElementById('passDisplay');
-    const recDisplayEl = document.getElementById('recDisplay');
-    const urlBtnEl = document.getElementById('urlBtn');
-
-    const toggleBtn = document.getElementById('toggleBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const addBtn = document.getElementById('addBtn');
-    const pullBtn = document.getElementById('pullBtn');
-    const copyFullBtn = document.getElementById('copyFullBtn');
-
-    const restoreBtn = document.getElementById('restoreBtn');
-    const deleteLastBtn = document.getElementById('deleteLastBtn');
-
-    const moveButtonsWrap = document.getElementById('moveButtonsWrap');
-
-    const importBtn = document.getElementById('importBtn');
-    const importFile = document.getElementById('importFile');
-    const exportBtn = document.getElementById('exportBtn');
-
-    const toast = document.getElementById('toast');
-    const toastMsg = document.getElementById('toastMsg');
-    const toastIcon = document.getElementById('toastIcon');
-    let toastTimeout;
-
-    // ===== Inventories =====
-    const META_KEY = 'smartInv_inventories_meta_v1';
-    const ACTIVE_KEY = 'smartInv_activeInventory_v1';
-
-    // Go هو نفس مفاتيح Gemini القديمة (حتى لا تضيع بياناتك)
-    const GO_ID = 'gemini';
-    const NEW_GEMINI_ID = 'gemini_new';
-
-    const LEGACY_KEYS = {
-      main:   { data:'smartInventory_data', pulled:'smartInventory_pulled', last:'smartInventory_lastPulled', undo:'smartInventory_undo' },
-      gemini: { data:'smartGemini_data',    pulled:'smartGemini_pulled',   last:'smartGemini_lastPulled',   undo:'smartGemini_undo' }
-    };
-
-    let inventoriesMeta = [];
-    let activeInvId = 'main';
-    let store = {};
-
-    // Links
-    const LINKS_KEY = 'smartInv_quickLinks_v2';
-    let quickLinks = [];
-
-    function safeJsonParse(value, fallback) { try { return JSON.parse(value); } catch { return fallback; } }
-
-    function flash(el){
-      if(!el) return;
-      el.classList.remove('flash');
-      void el.offsetWidth;
-      el.classList.add('flash');
-      setTimeout(()=> el.classList.remove('flash'), 260);
+  <style>
+    body{
+      font-family:'Tajawal', sans-serif;
+      background:
+        radial-gradient(900px 500px at 15% -10%, rgba(59,130,246,.18), transparent 60%),
+        radial-gradient(800px 500px at 90% 10%, rgba(16,185,129,.12), transparent 55%),
+        #0b1224;
+      color:#e2e8f0;
+      overflow-x:hidden;
     }
 
-    function showToast(message, type = 'info') {
-      toastMsg.textContent = message;
-      toast.className =
-        "fixed bottom-5 left-5 px-5 py-3 rounded-2xl shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 font-bold border";
+    ::-webkit-scrollbar{ width:8px; }
+    ::-webkit-scrollbar-track{ background:#070c18; }
+    ::-webkit-scrollbar-thumb{ background:#3b82f6; border-radius:6px; }
+    ::-webkit-scrollbar-thumb:hover{ background:#2563eb; }
 
-      if (type === 'success') {
-        toast.classList.add('bg-emerald-950/80', 'border-emerald-800/60', 'text-emerald-100');
-        toastIcon.className = "fa-solid fa-circle-check text-emerald-300";
-      } else if (type === 'error') {
-        toast.classList.add('bg-red-950/80', 'border-red-800/60', 'text-red-100');
-        toastIcon.className = "fa-solid fa-triangle-exclamation text-red-300";
-      } else if (type === 'copy') {
-        toast.classList.add('bg-blue-950/80', 'border-blue-800/60', 'text-blue-100');
-        toastIcon.className = "fa-solid fa-copy text-blue-300";
-      } else {
-        toast.classList.add('bg-slate-900/90', 'border-slate-700/70', 'text-white');
-        toastIcon.className = "fa-solid fa-info-circle text-slate-200";
+    .glass-panel{
+      background: rgba(15,23,42,.55);
+      border: 1px solid rgba(148,163,184,.18);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    .soft{
+      transition: background .16s ease, border-color .16s ease, box-shadow .16s ease, transform .06s ease;
+      will-change: auto;
+    }
+
+    .press-glow:active{
+      box-shadow: 0 0 0 3px rgba(255,255,255,.08), 0 0 18px rgba(59,130,246,.20);
+      transform: translateY(1px);
+    }
+
+    .flash{ animation: flash .22s ease-out; }
+    @keyframes flash{
+      0%{ box-shadow: 0 0 0 rgba(255,255,255,0); }
+      100%{ box-shadow: 0 0 0 3px rgba(255,255,255,.08), 0 0 22px rgba(56,189,248,.20); }
+    }
+
+    .field-copy{
+      cursor:pointer;
+      transition: background .16s ease, border-color .16s ease, box-shadow .16s ease;
+    }
+    .field-copy:hover{
+      background-color: rgba(51,65,85,.25);
+      border-color: rgba(59,130,246,.35);
+      box-shadow: 0 10px 25px rgba(0,0,0,.18);
+    }
+
+    .tab-pill{
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.45);
+      white-space: nowrap;
+    }
+    .tab-active{
+      border-color: rgba(59,130,246,.45);
+      background: rgba(59,130,246,.10);
+      box-shadow: 0 0 0 3px rgba(59,130,246,.12);
+    }
+
+    #snowCanvas{
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 5;
+      opacity: .55;
+    }
+
+    .modal-backdrop{
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 60;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-backdrop.show{ display:flex; }
+
+    body.modal-open{
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    .modal-panel{
+      max-height: 82vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .nbb-verified{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      padding:6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(148,163,184,.18);
+      background: rgba(2,6,23,.35);
+    }
+    .nbb-badge{
+      width: 18px;
+      height: 18px;
+      border-radius: 999px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border: 1px solid rgba(148,163,184,.22);
+      animation: badgeShift 1.8s ease-in-out infinite;
+      box-shadow: 0 0 18px rgba(59,130,246,.10);
+    }
+    @keyframes badgeShift{
+      0%   { background: rgba(59,130,246,.30); box-shadow: 0 0 18px rgba(59,130,246,.18); }
+      50%  { background: rgba(16,185,129,.28); box-shadow: 0 0 18px rgba(16,185,129,.18); }
+      100% { background: rgba(168,85,247,.28); box-shadow: 0 0 18px rgba(168,85,247,.18); }
+    }
+    .nbb-fire i{
+      filter: drop-shadow(0 0 10px rgba(251,146,60,.22));
+      animation: flame 1.1s ease-in-out infinite;
+      transform-origin: 50% 60%;
+    }
+    @keyframes flame{
+      0%{ transform: translateY(0) scale(1); opacity: .9; }
+      50%{ transform: translateY(-2px) scale(1.05); opacity: 1; }
+      100%{ transform: translateY(0) scale(1); opacity: .9; }
+    }
+  </style>
+</head>
+
+<body class="min-h-screen flex flex-col items-center py-10 px-4">
+
+  <canvas id="snowCanvas"></canvas>
+
+  <header class="w-full max-w-5xl mb-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-5 relative z-10">
+    <div class="space-y-2">
+      <h1 class="text-3xl font-extrabold text-blue-400 flex items-center gap-3">
+        <i class="fa-solid fa-boxes-stacked"></i>
+        <span id="titleName">المخزون</span>
+      </h1>
+
+      <div class="nbb-verified w-fit">
+        <span class="text-slate-200 font-bold text-sm">مصمم المخزون نبيل</span>
+        <span class="nbb-badge" title="موثق">
+          <i class="fa-solid fa-check text-[10px] text-white"></i>
+        </span>
+        <span class="nbb-fire" title="🔥">
+          <i class="fa-solid fa-fire text-amber-300"></i>
+        </span>
+      </div>
+
+      <div class="text-xs text-slate-300 mt-2">
+        حالة السحابة: <span id="cloudStatus" class="font-bold text-amber-300">غير متصل</span>
+        • المستخدم: <span id="userLabel" class="font-mono text-slate-200">---</span>
+      </div>
+    </div>
+
+    <div class="flex gap-3 w-full md:w-auto items-center">
+      <div class="flex gap-2 items-center flex-wrap">
+        <div id="tabsWrap" class="flex gap-2 flex-wrap"></div>
+
+        <button id="addInvBtn" title="إضافة مخزون جديد"
+          class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-black text-slate-100">
+          <i class="fa-solid fa-plus ml-2 text-emerald-300"></i> إضافة مخزون
+        </button>
+
+        <button id="linksBtn" title="روابط"
+          class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100">
+          <i class="fa-solid fa-link ml-2 text-sky-300"></i> روابط
+        </button>
+
+        <button id="settingsBtn" title="إعدادات"
+          class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100">
+          <i class="fa-solid fa-gear ml-2 text-slate-300"></i> الإعدادات
+        </button>
+
+        <button id="logoutBtn" title="تسجيل خروج"
+          class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100">
+          <i class="fa-solid fa-right-from-bracket ml-2 text-rose-300"></i> خروج
+        </button>
+      </div>
+
+      <div class="glass-panel soft px-5 py-3 rounded-2xl text-center shadow-lg shadow-blue-500/10">
+        <span class="block text-xs text-slate-400">المتوفر بالمخزون</span>
+        <span id="stockCount" class="text-2xl font-extrabold text-emerald-300">0</span>
+      </div>
+      <div class="glass-panel soft px-5 py-3 rounded-2xl text-center shadow-lg shadow-purple-500/10">
+        <span class="block text-xs text-slate-400">تم سحبها</span>
+        <span id="pulledCount" class="text-2xl font-extrabold text-purple-300">0</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="w-full max-w-5xl space-y-6 relative z-10">
+
+    <section class="glass-panel soft p-6 rounded-3xl shadow-xl">
+      <div class="flex justify-between items-center mb-4 gap-3">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-cloud-arrow-up text-blue-400"></i>
+          <span>تغذية المخزون</span>
+        </h2>
+
+        <button id="toggleBtn" class="press-glow soft text-slate-300 hover:text-white text-sm underline">
+          إخفاء/إظهار
+        </button>
+      </div>
+
+      <div id="inputSection" class="space-y-4">
+        <textarea id="bulkInput" rows="5"
+          class="w-full bg-slate-950/30 text-sm text-white p-4 rounded-2xl border border-slate-700/60 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition placeholder-slate-500"
+          placeholder="ضع القائمة هنا بالتنسيق:
+email;pass;recovery;url
+email;pass;recovery;url"></textarea>
+
+        <div class="flex flex-col md:flex-row justify-between gap-3">
+          <button id="clearBtn"
+            class="press-glow soft text-red-200 hover:text-red-100 transition px-4 py-2 rounded-xl border border-red-900/40 bg-red-950/20 hover:bg-red-950/30">
+            <i class="fa-solid fa-trash ml-1"></i> تصفير المخزون
+          </button>
+
+          <div class="flex flex-col sm:flex-row gap-3">
+            <button id="importBtn"
+              class="press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold py-3 px-6 rounded-2xl flex items-center justify-center gap-2">
+              <i class="fa-solid fa-file-arrow-up text-blue-300"></i>
+              <span>استيراد ملف</span>
+            </button>
+            <input id="importFile" type="file" accept=".txt" class="hidden" />
+
+            <button id="exportBtn"
+              class="press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold py-3 px-6 rounded-2xl flex items-center justify-center gap-2">
+              <i class="fa-solid fa-file-arrow-down text-emerald-300"></i>
+              <span>تصدير المخزون</span>
+            </button>
+
+            <button id="addBtn"
+              class="press-glow soft bg-blue-600 hover:bg-blue-500 text-white font-extrabold py-3 px-7 rounded-2xl shadow-lg shadow-blue-600/15 flex items-center justify-center gap-2">
+              <i class="fa-solid fa-plus"></i>
+              <span>إضافة للمخزون</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="flex justify-center py-2">
+      <button id="pullBtn"
+        class="press-glow soft relative group bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-2xl font-black py-5 px-8 md:px-12 rounded-3xl shadow-2xl shadow-emerald-500/20 w-full md:w-auto">
+        <div class="flex items-center justify-center gap-3">
+          <i class="fa-solid fa-hand-holding-hand"></i>
+          <span>سحب حساب جديد</span>
+        </div>
+      </button>
+    </div>
+
+    <section id="resultArea" class="hidden">
+      <div class="glass-panel soft p-1 rounded-[26px] border border-slate-600/50 shadow-2xl">
+        <div class="bg-slate-950/25 rounded-[22px] p-6">
+          <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 pb-4 border-b border-slate-700/60 gap-2">
+            <span class="text-emerald-300 font-extrabold text-lg flex items-center gap-2">
+              <i class="fa-solid fa-check-circle"></i>
+              تم السحب بنجاح
+            </span>
+            <span class="text-xs text-slate-400 font-mono" id="timestamp"></span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="press-glow field-copy soft bg-slate-950/25 p-3 rounded-2xl border border-slate-700/60 group" data-copy="email">
+              <label class="text-xs text-slate-400 block mb-1">البريد الإلكتروني (Email)</label>
+              <div class="flex justify-between items-center gap-3">
+                <span id="emailDisplay" class="font-mono text-blue-300 truncate">---</span>
+                <i class="fa-regular fa-copy text-slate-500 group-hover:text-white"></i>
+              </div>
+            </div>
+
+            <div class="press-glow field-copy soft bg-slate-950/25 p-3 rounded-2xl border border-slate-700/60 group" data-copy="password">
+              <label class="text-xs text-slate-400 block mb-1">كلمة المرور (Password)</label>
+              <div class="flex justify-between items-center gap-3">
+                <span id="passDisplay" class="font-mono text-rose-300 truncate">---</span>
+                <i class="fa-regular fa-copy text-slate-500 group-hover:text-white"></i>
+              </div>
+            </div>
+
+            <div class="press-glow field-copy soft bg-slate-950/25 p-3 rounded-2xl border border-slate-700/60 group" data-copy="recovery">
+              <label class="text-xs text-slate-400 block mb-1">الاسترداد (Recovery Email)</label>
+              <div class="flex justify-between items-center gap-3">
+                <span id="recDisplay" class="font-mono text-amber-300 truncate">---</span>
+                <i class="fa-regular fa-copy text-slate-500 group-hover:text-white"></i>
+              </div>
+            </div>
+
+            <div class="soft bg-slate-950/25 p-3 rounded-2xl border border-slate-700/60 flex justify-between items-center gap-3">
+              <div>
+                <label class="text-xs text-slate-400 block mb-1">رابط الرسائل (Webhook)</label>
+              </div>
+              <a id="urlBtn" href="#" target="_blank" rel="noopener"
+                 class="press-glow soft bg-indigo-600 hover:bg-indigo-500 text-white text-sm px-4 py-2 rounded-xl transition shadow-lg shadow-indigo-600/15">
+                <i class="fa-solid fa-arrow-up-right-from-square ml-1"></i> فتح
+              </a>
+            </div>
+          </div>
+
+          <div class="mt-2 space-y-2">
+            <button id="copyFullBtn"
+              class="press-glow soft w-full bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 group">
+              <i class="fa-solid fa-clipboard-list text-blue-300"></i>
+              <span>نسخ المعلومات كاملة (شامل)</span>
+            </button>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button id="restoreBtn"
+                class="press-glow soft bg-emerald-700/30 hover:bg-emerald-700/40 border border-emerald-700/35 text-emerald-100 font-bold py-3 rounded-2xl flex items-center justify-center gap-2">
+                <i class="fa-solid fa-rotate-left text-emerald-300"></i>
+                <span>استرجاع للمخزون</span>
+              </button>
+
+              <button id="deleteLastBtn"
+                class="press-glow soft bg-red-700/20 hover:bg-red-700/28 border border-red-700/30 text-red-100 font-bold py-3 rounded-2xl flex items-center justify-center gap-2">
+                <i class="fa-solid fa-xmark text-red-300"></i>
+                <span>حذف من الشاشة</span>
+              </button>
+            </div>
+
+            <div id="moveButtonsWrap" class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2"></div>
+
+            <p class="text-center text-[11px] text-slate-300">
+              ✅ آخر حساب مسحوب يبقى محفوظ سحابياً حتى لو خرجت ورجعت لاحقاً.
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast -->
+  <div id="toast"
+    class="fixed bottom-5 left-5 bg-slate-900/90 border border-slate-700/70 text-white px-5 py-3 rounded-2xl shadow-2xl transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-3">
+    <i id="toastIcon" class="fa-solid fa-info-circle"></i>
+    <span id="toastMsg">تم العملية بنجاح</span>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal-backdrop">
+    <div class="glass-panel soft modal-panel w-full max-w-2xl rounded-3xl p-5 border border-slate-700/50 shadow-2xl">
+      <div class="flex justify-between items-center mb-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-gear text-slate-300"></i>
+          <span class="font-extrabold text-white">إعدادات المخزون</span>
+          <span class="text-xs text-slate-300">حذف مخزون من التخزين</span>
+        </div>
+        <button id="closeSettingsBtn" class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold">
+          إغلاق
+        </button>
+      </div>
+
+      <div class="bg-slate-950/20 border border-slate-700/40 rounded-2xl p-4">
+        <div class="text-sm text-slate-200 font-bold mb-2">📦 المخازن الحالية</div>
+        <div id="invListWrap" class="space-y-2"></div>
+
+        <p class="text-[11px] text-slate-300 mt-3">
+          ⚠️ حذف المخزون يعني حذف بياناته من السحابة، ولا يؤثر على المخازن الأخرى.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Links Modal -->
+  <div id="linksModal" class="modal-backdrop">
+    <div class="glass-panel soft modal-panel w-full max-w-2xl rounded-3xl p-5 border border-slate-700/50 shadow-2xl">
+      <div class="flex justify-between items-center mb-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-link text-sky-300"></i>
+          <span class="font-extrabold text-white">روابط</span>
+          <span class="text-xs text-slate-300">اضغط على اسم الرابط لنسخ — زر فتح للفتح</span>
+        </div>
+        <div class="flex gap-2">
+          <button id="addLinkBtn"
+            class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100"
+            title="إضافة رابط">
+            <i class="fa-solid fa-plus ml-2 text-sky-200"></i> +
+          </button>
+          <button id="closeLinksBtn" class="press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold">
+            إغلاق
+          </button>
+        </div>
+      </div>
+
+      <div id="linksWrap" class="space-y-2"></div>
+
+      <p class="text-[11px] text-slate-300 mt-3">
+        ✳️ (إزالة) لحذف الرابط — (↑ ↓) لتحريك الرابط للأعلى أو للأسفل.
+      </p>
+    </div>
+  </div>
+
+  <!-- ✅ Auth Modal (Register/Login) -->
+  <div id="authModal" class="modal-backdrop show">
+    <div class="glass-panel soft modal-panel w-full max-w-xl rounded-3xl p-5 border border-slate-700/50 shadow-2xl">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-user-lock text-emerald-300"></i>
+          <span class="font-extrabold text-white">تسجيل الدخول للسحابة</span>
+        </div>
+      </div>
+
+      <div class="bg-slate-950/20 border border-slate-700/40 rounded-2xl p-4 space-y-3">
+        <input id="authEmail" type="email" placeholder="الايميل"
+          class="w-full bg-slate-950/30 text-white p-3 rounded-2xl border border-slate-700/60 outline-none" />
+        <input id="authPass" type="password" placeholder="كلمة المرور"
+          class="w-full bg-slate-950/30 text-white p-3 rounded-2xl border border-slate-700/60 outline-none" />
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button id="registerBtn" class="press-glow soft bg-blue-600 hover:bg-blue-500 text-white font-extrabold py-3 rounded-2xl">
+            <i class="fa-solid fa-user-plus ml-2"></i> إنشاء حساب
+          </button>
+          <button id="loginBtn" class="press-glow soft bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold py-3 rounded-2xl">
+            <i class="fa-solid fa-right-to-bracket ml-2"></i> دخول
+          </button>
+        </div>
+
+        <p class="text-[12px] text-slate-300">
+          ✅ بعد الدخول كل بيانات المخزون تنحفظ بالسحابة تلقائياً.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      // =========================
+      // ✅ Firebase Config (مالتك)
+      // =========================
+      const firebaseConfig = {
+        apiKey: "AIzaSyC4Q4qTILDP4eYuo8OpER_NQ4udj5lXSwM",
+        authDomain: "nabeel-abd.firebaseapp.com",
+        projectId: "nabeel-abd",
+        storageBucket: "nabeel-abd.firebasestorage.app",
+        messagingSenderId: "397355019788",
+        appId: "1:397355019788:web:9d1961a81f62d06f44c829",
+        measurementId: "G-9ES5BKWRVH"
+      };
+
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const db = firebase.firestore();
+
+      // =========================
+      // عناصر
+      // =========================
+      const stockCountEl = document.getElementById('stockCount');
+      const pulledCountEl = document.getElementById('pulledCount');
+      const titleNameEl = document.getElementById('titleName');
+
+      const tabsWrap = document.getElementById('tabsWrap');
+      const addInvBtn = document.getElementById('addInvBtn');
+      const settingsBtn = document.getElementById('settingsBtn');
+
+      const linksBtn = document.getElementById('linksBtn');
+      const linksModal = document.getElementById('linksModal');
+      const closeLinksBtn = document.getElementById('closeLinksBtn');
+      const addLinkBtn = document.getElementById('addLinkBtn');
+      const linksWrap = document.getElementById('linksWrap');
+
+      const settingsModal = document.getElementById('settingsModal');
+      const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+      const invListWrap = document.getElementById('invListWrap');
+
+      const inputSectionEl = document.getElementById('inputSection');
+      const bulkInputEl = document.getElementById('bulkInput');
+
+      const resultAreaEl = document.getElementById('resultArea');
+      const timestampEl = document.getElementById('timestamp');
+
+      const emailDisplayEl = document.getElementById('emailDisplay');
+      const passDisplayEl = document.getElementById('passDisplay');
+      const recDisplayEl = document.getElementById('recDisplay');
+      const urlBtnEl = document.getElementById('urlBtn');
+
+      const toggleBtn = document.getElementById('toggleBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const addBtn = document.getElementById('addBtn');
+      const pullBtn = document.getElementById('pullBtn');
+      const copyFullBtn = document.getElementById('copyFullBtn');
+
+      const restoreBtn = document.getElementById('restoreBtn');
+      const deleteLastBtn = document.getElementById('deleteLastBtn');
+
+      const moveButtonsWrap = document.getElementById('moveButtonsWrap');
+
+      const importBtn = document.getElementById('importBtn');
+      const importFile = document.getElementById('importFile');
+      const exportBtn = document.getElementById('exportBtn');
+
+      const toast = document.getElementById('toast');
+      const toastMsg = document.getElementById('toastMsg');
+      const toastIcon = document.getElementById('toastIcon');
+      let toastTimeout;
+
+      // Auth UI
+      const authModal = document.getElementById('authModal');
+      const authEmail = document.getElementById('authEmail');
+      const authPass  = document.getElementById('authPass');
+      const registerBtn = document.getElementById('registerBtn');
+      const loginBtn = document.getElementById('loginBtn');
+      const logoutBtn = document.getElementById('logoutBtn');
+
+      const cloudStatus = document.getElementById('cloudStatus');
+      const userLabel = document.getElementById('userLabel');
+
+      // =========================
+      // ✅ Cloud Storage (Firestore)
+      // =========================
+      let currentUser = null;
+      let unsubRealtime = null;
+
+      function userDocRef(uid){
+        return db.collection('users').doc(uid).collection('smartInv').doc('state');
       }
 
-      toast.classList.remove('translate-y-20', 'opacity-0');
-      clearTimeout(toastTimeout);
-      toastTimeout = setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 2300);
-    }
-
-    async function copyText(text) {
-      try {
-        if (navigator.clipboard && window.isSecureContext) {
-          await navigator.clipboard.writeText(text);
-          return true;
+      async function cloudSave(state){
+        if(!currentUser) return;
+        cloudStatus.textContent = 'يتم الحفظ...';
+        cloudStatus.className = 'font-bold text-amber-300';
+        try{
+          await userDocRef(currentUser.uid).set(state, { merge: true });
+          cloudStatus.textContent = 'متصل ✅';
+          cloudStatus.className = 'font-bold text-emerald-300';
+        }catch(e){
+          cloudStatus.textContent = 'فشل اتصال';
+          cloudStatus.className = 'font-bold text-rose-300';
+          showToast('تعذر الحفظ بالسحابة (تأكد من القواعد Rules).', 'error');
         }
-      } catch (_) {}
-      try {
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.top = '-9999px';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        const ok = document.execCommand('copy');
-        document.body.removeChild(ta);
-        return ok;
-      } catch (_) { return false; }
-    }
+      }
 
-    function normalizeUrl(u){
-      const url = String(u || '').trim();
-      if(!url) return '';
-      if (!/^https?:\/\//i.test(url)) return 'https://' + url;
-      return url;
-    }
+      // حفظ تلقائي (debounce)
+      let saveTimer = null;
+      function cloudSaveDebounced(){
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          cloudSave(buildCloudState());
+        }, 700);
+      }
 
-    function getInvMetaById(id){ return inventoriesMeta.find(x => x.id === id) || null; }
+      function startRealtime(){
+        if(!currentUser) return;
+        if(unsubRealtime) unsubRealtime();
 
-    function keysFor(id){
-      const meta = getInvMetaById(id);
-      if (!meta) return LEGACY_KEYS.main;
-      if (meta.type === 'legacy-main') return LEGACY_KEYS.main;
-      if (meta.type === 'legacy-gemini') return LEGACY_KEYS.gemini;
+        unsubRealtime = userDocRef(currentUser.uid).onSnapshot((snap)=>{
+          if(!snap.exists) return;
+          const data = snap.data();
+          // نحدّث الحالة من السحابة
+          applyCloudState(data);
+          cloudStatus.textContent = 'متصل ✅';
+          cloudStatus.className = 'font-bold text-emerald-300';
+        }, ()=>{
+          cloudStatus.textContent = 'فشل اتصال';
+          cloudStatus.className = 'font-bold text-rose-300';
+        });
+      }
 
-      const p = `smartInv_${meta.id}`;
-      return {
-        data:   `${p}_data`,
-        pulled: `${p}_pulled`,
-        last:   `${p}_lastPulled`,
-        undo:   `${p}_undo`
+      // =========================
+      // Toast
+      // =========================
+      function flash(el){
+        if(!el) return;
+        el.classList.remove('flash');
+        void el.offsetWidth;
+        el.classList.add('flash');
+        setTimeout(()=> el.classList.remove('flash'), 260);
+      }
+
+      function showToast(message, type = 'info') {
+        toastMsg.textContent = message;
+        toast.className =
+          "fixed bottom-5 left-5 px-5 py-3 rounded-2xl shadow-2xl transform transition-all duration-300 z-50 flex items-center gap-3 font-bold border";
+
+        if (type === 'success') {
+          toast.classList.add('bg-emerald-950/80', 'border-emerald-800/60', 'text-emerald-100');
+          toastIcon.className = "fa-solid fa-circle-check text-emerald-300";
+        } else if (type === 'error') {
+          toast.classList.add('bg-red-950/80', 'border-red-800/60', 'text-red-100');
+          toastIcon.className = "fa-solid fa-triangle-exclamation text-red-300";
+        } else if (type === 'copy') {
+          toast.classList.add('bg-blue-950/80', 'border-blue-800/60', 'text-blue-100');
+          toastIcon.className = "fa-solid fa-copy text-blue-300";
+        } else {
+          toast.classList.add('bg-slate-900/90', 'border-slate-700/70', 'text-white');
+          toastIcon.className = "fa-solid fa-info-circle text-slate-200";
+        }
+
+        toast.classList.remove('translate-y-20', 'opacity-0');
+        clearTimeout(toastTimeout);
+        toastTimeout = setTimeout(() => toast.classList.add('translate-y-20', 'opacity-0'), 2300);
+      }
+
+      async function copyText(text) {
+        try {
+          if (navigator.clipboard && window.isSecureContext) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (_) {}
+        try {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.top = '-9999px';
+          ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.focus();
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return ok;
+        } catch (_) { return false; }
+      }
+
+      function safeJsonParse(value, fallback) { try { return JSON.parse(value); } catch { return fallback; } }
+      function normalizeUrl(u){
+        const url = String(u || '').trim();
+        if(!url) return '';
+        if (!/^https?:\/\//i.test(url)) return 'https://' + url;
+        return url;
+      }
+
+      // =========================
+      // ✅ بيانات التطبيق (نفس منطقك بس صارت بالسحابة)
+      // =========================
+      const GO_ID = 'gemini';
+      const NEW_GEMINI_ID = 'gemini_new';
+
+      let inventoriesMeta = [
+        { id:'main', name:'الأساسي', type:'legacy-main' },
+        { id:GO_ID, name:'Go', type:'legacy-gemini' },
+        { id:NEW_GEMINI_ID, name:'Gemini', type:'custom' }
+      ];
+
+      let activeInvId = 'main';
+
+      // store: { [invId]: { inventory:[], pulledCounter:0, currentAccount:null } }
+      let store = {
+        main: { inventory: [], pulledCounter: 0, currentAccount: null },
+        gemini: { inventory: [], pulledCounter: 0, currentAccount: null },
+        gemini_new: { inventory: [], pulledCounter: 0, currentAccount: null }
       };
-    }
 
-    function K(){ return keysFor(activeInvId); }
-    function S(){
-      if(!store[activeInvId]) store[activeInvId] = { inventory: [], pulledCounter: 0, currentAccount: null };
-      return store[activeInvId];
-    }
+      // Links
+      let quickLinks = [
+        { id:'l1', name:'التحقق من ChatGPT', url:'https://batch.1key.me/' },
+        { id:'l2', name:'بوت التحقق', url:'https://t.me/Veriyferbot' }
+      ];
 
-    // =========================
-    // ✅ CLOUD SYNC (سحابي + محلي)
-    // =========================
-    const CLOUD = {
-      uid: null,
-      email: null,
-      docRef: null,
-      unsub: null,
-      ready: false,
-      lastLocalWrite: 0,
-      debounceT: null
-    };
+      function S(){
+        if(!store[activeInvId]) store[activeInvId] = { inventory: [], pulledCounter: 0, currentAccount: null };
+        return store[activeInvId];
+      }
 
-    function cloudDoc(){
-      if(!CLOUD.uid) return null;
-      return doc(db, "users", CLOUD.uid, "smartInv", "state");
-    }
-
-    function buildCloudPayload(){
-      // خزّن كل المخازن (كل inv)
-      const allStores = {};
-      for (const inv of inventoriesMeta) {
-        const id = inv.id;
-        if(!store[id]) store[id] = { inventory: [], pulledCounter: 0, currentAccount: null };
-
-        // تأكد محمّل من localStorage
-        const prev = activeInvId;
-        activeInvId = id;
-        loadActive();
-        activeInvId = prev;
-
-        allStores[id] = {
-          inventory: store[id].inventory || [],
-          pulledCounter: Number(store[id].pulledCounter || 0),
-          currentAccount: store[id].currentAccount || null
+      function buildCloudState(){
+        return {
+          v: 1,
+          inventoriesMeta,
+          activeInvId,
+          store,
+          quickLinks,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         };
       }
 
-      return {
-        v: 1,
-        updatedAt: Date.now(),
-        meta: inventoriesMeta,
-        activeInvId,
-        stores: allStores,
-        links: quickLinks
-      };
-    }
+      function applyCloudState(state){
+        // حماية
+        if(!state) return;
+        if(Array.isArray(state.inventoriesMeta)) inventoriesMeta = state.inventoriesMeta;
+        if(typeof state.activeInvId === 'string') activeInvId = state.activeInvId;
+        if(state.store && typeof state.store === 'object') store = state.store;
+        if(Array.isArray(state.quickLinks)) quickLinks = state.quickLinks;
 
-    function applyCloudPayload(payload){
-      try{
-        if(!payload) return;
+        buildTabs();
+        setActiveInventory(activeInvId, true);
+        renderLinks();
+        renderSettingsInventories();
+      }
 
-        // ✅ Meta + Active
-        if (payload.meta) localStorage.setItem(META_KEY, JSON.stringify(payload.meta));
-        if (payload.activeInvId) localStorage.setItem(ACTIVE_KEY, payload.activeInvId);
+      // =========================
+      // UI
+      // =========================
+      function updateHeaderTitle(){
+        titleNameEl.textContent = 'المخزون';
+      }
 
-        // ✅ Links
-        if (payload.links) localStorage.setItem(LINKS_KEY, JSON.stringify(payload.links));
+      function buildTabs(){
+        tabsWrap.innerHTML = '';
+        for (const inv of inventoriesMeta) {
+          const btn = document.createElement('button');
+          btn.className = "press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100";
+          if (inv.id === activeInvId) btn.classList.add('tab-active');
 
-        // ✅ Stores per inventory -> نفس مفاتيح localStorage
-        const metaArr = payload.meta || safeJsonParse(localStorage.getItem(META_KEY), []) || [];
-        const storesObj = payload.stores || {};
+          let icon = 'fa-layer-group';
+          let iconColor = 'text-blue-300';
+          if (inv.id === GO_ID) { icon = 'fa-bolt'; iconColor = 'text-emerald-300'; }
+          if (inv.id === NEW_GEMINI_ID) { icon = 'fa-wand-magic-sparkles'; iconColor = 'text-sky-300'; }
+          if (inv.id !== 'main' && inv.id !== GO_ID && inv.id !== NEW_GEMINI_ID) { icon = 'fa-box'; iconColor = 'text-amber-300'; }
 
-        for (const inv of metaArr) {
-          const id = inv.id;
-          const keys = (function(){
-            if (inv.type === 'legacy-main') return LEGACY_KEYS.main;
-            if (inv.type === 'legacy-gemini') return LEGACY_KEYS.gemini;
-            const p = `smartInv_${id}`;
-            return { data:`${p}_data`, pulled:`${p}_pulled`, last:`${p}_lastPulled`, undo:`${p}_undo` };
-          })();
-
-          const s = storesObj[id];
-          if (!s) continue;
-
-          localStorage.setItem(keys.data, JSON.stringify(s.inventory || []));
-          localStorage.setItem(keys.pulled, String(s.pulledCounter || 0));
-
-          if (s.currentAccount) localStorage.setItem(keys.last, JSON.stringify(s.currentAccount));
-          else localStorage.removeItem(keys.last);
+          btn.innerHTML = `<i class="fa-solid ${icon} ml-2 ${iconColor}"></i>${inv.name}`;
+          btn.addEventListener('click', () => setActiveInventory(inv.id));
+          tabsWrap.appendChild(btn);
         }
-      }catch(e){
-        console.error(e);
       }
-    }
 
-    async function cloudSaveAll(force=false){
-      if(!CLOUD.uid) return;
-      const d = cloudDoc();
-      if(!d) return;
-
-      const payload = buildCloudPayload();
-      CLOUD.lastLocalWrite = payload.updatedAt;
-
-      try{
-        await setDoc(d, payload, { merge: false });
-        if(force) showToast("✅ تم حفظ البيانات سحابياً", "success");
-      }catch(e){
-        console.error(e);
-        showToast("⚠️ فشل الحفظ السحابي (تحقق من Firestore Rules)", "error");
+      function setStockCounterColor(stockLen) {
+        if (stockLen === 0) stockCountEl.className = "text-2xl font-extrabold text-red-400";
+        else if (stockLen < 5) stockCountEl.className = "text-2xl font-extrabold text-amber-300";
+        else stockCountEl.className = "text-2xl font-extrabold text-emerald-300";
       }
-    }
 
-    function cloudSaveDebounced(){
-      if(!CLOUD.uid) return;
-      clearTimeout(CLOUD.debounceT);
-      CLOUD.debounceT = setTimeout(()=> cloudSaveAll(false), 800);
-    }
+      function displayResult(acc) {
+        if (!acc) return;
+        resultAreaEl.classList.remove('hidden');
+        emailDisplayEl.textContent = acc.email || '---';
+        passDisplayEl.textContent = acc.password || '---';
+        recDisplayEl.textContent = acc.recovery || 'غير متوفر';
+        urlBtnEl.href = acc.url && acc.url !== '' ? acc.url : '#';
+        timestampEl.textContent = new Date().toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      }
 
-    async function cloudLoadOnce(){
-      if(!CLOUD.uid) return;
-      const d = cloudDoc();
-      if(!d) return;
+      function updateUI() {
+        const s = S();
+        stockCountEl.textContent = s.inventory.length;
+        pulledCountEl.textContent = s.pulledCounter;
+        setStockCounterColor(s.inventory.length);
 
-      try{
-        const snap = await getDoc(d);
-        if(snap.exists()){
-          const data = snap.data();
-          // ✅ إذا السحابة فيها بيانات، خذها وخزنها محلياً
-          applyCloudPayload(data);
-          showToast("☁️ تم تحميل بياناتك من السحابة", "success");
-          // أسهل طريقة لضمان كلشي يشتغل: إعادة تحميل الصفحة
-          setTimeout(()=> location.reload(), 600);
-        }else{
-          // ✅ أول مرة: ارفع بيانات الجهاز للسحابة
-          await cloudSaveAll(true);
+        const last = s.currentAccount;
+        if (last) {
+          displayResult(last);
+        } else {
+          resultAreaEl.classList.add('hidden');
         }
-      }catch(e){
-        console.error(e);
-        showToast("⚠️ فشل تحميل البيانات السحابية", "error");
       }
-    }
 
-    function cloudListen(){
-      if(!CLOUD.uid) return;
-      const d = cloudDoc();
-      if(!d) return;
+      function setActiveInventory(id, silent=false){
+        if (!inventoriesMeta.some(x => x.id === id)) return;
+        activeInvId = id;
+        updateHeaderTitle();
+        buildTabs();
+        updateUI();
+        renderMoveButtons();
+        if(!silent) cloudSaveDebounced();
+      }
 
-      if(CLOUD.unsub) { try{ CLOUD.unsub(); }catch(_){} }
-      CLOUD.unsub = onSnapshot(d, (snap)=>{
-        if(!snap.exists()) return;
-        const data = snap.data();
-        const t = Number(data.updatedAt || 0);
+      function createNewInventory(){
+        flash(addInvBtn);
+        const name = prompt('اكتب اسم المخزون الجديد:');
+        if (!name || !String(name).trim()) { showToast('تم الإلغاء (اسم المخزون فارغ).', 'error'); return; }
+        const n = String(name).trim();
+        if (inventoriesMeta.some(x => x.name === n)) { showToast('هذا الاسم موجود بالفعل. اختر اسم مختلف.', 'error'); return; }
 
-        // إذا التحديث من جهاز ثاني (أحدث من آخر كتابة محلية) -> نزّله
-        if (t > (CLOUD.lastLocalWrite || 0)) {
-          applyCloudPayload(data);
-          showToast("🔄 تم تحديث البيانات من جهاز آخر", "info");
-          setTimeout(()=> location.reload(), 600);
+        const id = 'inv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
+        inventoriesMeta.push({ id, name: n, type:'custom' });
+        store[id] = { inventory: [], pulledCounter: 0, currentAccount: null };
+
+        buildTabs();
+        setActiveInventory(id);
+        showToast('تم إنشاء مخزون جديد ✅', 'success');
+        cloudSaveDebounced();
+      }
+
+      function parseStandardLine(line) {
+        const parts = line.split(';').map(p => p.trim());
+        if (parts.length < 2) return { ok: false };
+        const email = parts[0];
+        const password = parts[1];
+        const recovery = parts[2] || "غير متوفر";
+        const url = parts[3] || "#";
+        if (!email || !password) return { ok: false };
+        return { ok: true, acc: { email, password, recovery, url } };
+      }
+
+      function addToStockInternal(standardText) {
+        const s = S();
+        const stdLines = (standardText || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.length >= 5);
+
+        let addedCount = 0, duplicateCount = 0, invalidCount = 0;
+
+        function existsEmail(email){ return s.inventory.some(a => a.email === email); }
+
+        for (const line of stdLines) {
+          const parsed = parseStandardLine(line);
+          if (!parsed.ok) { invalidCount++; continue; }
+          const acc = parsed.acc;
+          if (existsEmail(acc.email)) { duplicateCount++; continue; }
+          s.inventory.push(acc); addedCount++;
         }
-      });
-    }
 
-    // =========================
-    // ✅ AUTH UI (جاهز بدون تعديل HTML)
-    // =========================
-    function makeAuthBar(){
-      const bar = document.createElement("div");
-      bar.style.position = "fixed";
-      bar.style.top = "12px";
-      bar.style.left = "12px";
-      bar.style.zIndex = "99999";
-      bar.style.display = "flex";
-      bar.style.gap = "8px";
-      bar.style.alignItems = "center";
-      bar.style.padding = "8px 10px";
-      bar.style.borderRadius = "14px";
-      bar.style.background = "rgba(15,23,42,.65)";
-      bar.style.border = "1px solid rgba(148,163,184,.18)";
-      bar.style.backdropFilter = "blur(10px)";
-
-      const status = document.createElement("span");
-      status.style.fontSize = "12px";
-      status.style.color = "#e2e8f0";
-      status.textContent = "☁️ غير مسجل";
-
-      const btnLogin = document.createElement("button");
-      btnLogin.textContent = "دخول";
-      btnLogin.style.cssText = "padding:6px 10px;border-radius:10px;border:1px solid rgba(148,163,184,.18);background:rgba(2,6,23,.45);color:#fff;font-weight:700;cursor:pointer";
-
-      const btnRegister = document.createElement("button");
-      btnRegister.textContent = "تسجيل";
-      btnRegister.style.cssText = btnLogin.style.cssText;
-
-      const btnLogout = document.createElement("button");
-      btnLogout.textContent = "خروج";
-      btnLogout.style.cssText = "padding:6px 10px;border-radius:10px;border:1px solid rgba(244,63,94,.25);background:rgba(244,63,94,.10);color:#fff;font-weight:800;cursor:pointer;display:none";
-
-      btnLogin.onclick = async ()=>{
-        const email = prompt("اكتب الايميل:");
-        if(!email) return;
-        const pass = prompt("اكتب كلمة المرور:");
-        if(!pass) return;
-        try{
-          await signInWithEmailAndPassword(auth, email.trim(), pass);
-          showToast("✅ تم تسجيل الدخول", "success");
-        }catch(e){
-          console.error(e);
-          showToast("❌ فشل الدخول (تأكد من الايميل/الباسورد)", "error");
-        }
-      };
-
-      btnRegister.onclick = async ()=>{
-        const email = prompt("اكتب الايميل للتسجيل:");
-        if(!email) return;
-        const pass = prompt("اكتب كلمة المرور (6 أحرف أو أكثر):");
-        if(!pass) return;
-        try{
-          await createUserWithEmailAndPassword(auth, email.trim(), pass);
-          showToast("✅ تم إنشاء الحساب وتسجيل الدخول", "success");
-        }catch(e){
-          console.error(e);
-          showToast("❌ فشل التسجيل (يمكن الايميل مستخدم أو كلمة المرور قصيرة)", "error");
-        }
-      };
-
-      btnLogout.onclick = async ()=>{
-        try{
-          await signOut(auth);
-          showToast("✅ تم تسجيل الخروج", "success");
-        }catch(e){
-          console.error(e);
-          showToast("❌ فشل الخروج", "error");
-        }
-      };
-
-      bar.appendChild(status);
-      bar.appendChild(btnLogin);
-      bar.appendChild(btnRegister);
-      bar.appendChild(btnLogout);
-      document.body.appendChild(bar);
-
-      // تحديث الحالة
-      onAuthStateChanged(auth, async (user)=>{
-        if(user){
-          CLOUD.uid = user.uid;
-          CLOUD.email = user.email || "";
-          status.textContent = `☁️ مسجل: ${CLOUD.email}`;
-          btnLogout.style.display = "";
-          btnLogin.style.display = "none";
-          btnRegister.style.display = "none";
-
-          await cloudLoadOnce();
-          cloudListen();
-        }else{
-          CLOUD.uid = null;
-          CLOUD.email = null;
-          status.textContent = "☁️ غير مسجل (محلي فقط)";
-          btnLogout.style.display = "none";
-          btnLogin.style.display = "";
-          btnRegister.style.display = "";
-
-          if(CLOUD.unsub){ try{ CLOUD.unsub(); }catch(_){} CLOUD.unsub=null; }
-        }
-      });
-    }
-
-    // =========================
-    // ✅ Local Storage الأصلية (مع رفع للسحابة)
-    // =========================
-    function saveActive() {
-      const keys = K();
-      const s = S();
-      localStorage.setItem(keys.data, JSON.stringify(s.inventory));
-      localStorage.setItem(keys.pulled, String(s.pulledCounter));
-      if (s.currentAccount) localStorage.setItem(keys.last, JSON.stringify(s.currentAccount));
-      cloudSaveDebounced(); // ✅
-    }
-
-    function loadActive() {
-      const keys = K();
-      const data = localStorage.getItem(keys.data);
-      const pulled = localStorage.getItem(keys.pulled);
-      const s = S();
-      s.inventory = data ? safeJsonParse(data, []) : [];
-      s.pulledCounter = pulled ? Number(pulled) || 0 : 0;
-      const last = localStorage.getItem(keys.last);
-      s.currentAccount = last ? safeJsonParse(last, null) : null;
-    }
-
-    function getLastPulled(id) {
-      const keys = keysFor(id);
-      const last = localStorage.getItem(keys.last);
-      return last ? safeJsonParse(last, null) : null;
-    }
-    function clearLastPulled(id) {
-      const keys = keysFor(id);
-      localStorage.removeItem(keys.last);
-      cloudSaveDebounced(); // ✅
-    }
-
-    function ensureMeta(){
-      const raw = localStorage.getItem(META_KEY);
-      if (raw) inventoriesMeta = safeJsonParse(raw, []);
-
-      if (!Array.isArray(inventoriesMeta) || inventoriesMeta.length === 0) {
-        inventoriesMeta = [
-          { id:'main', name:'الأساسي', type:'legacy-main' },
-          { id:GO_ID, name:'Go', type:'legacy-gemini' },
-          { id:NEW_GEMINI_ID, name:'Gemini', type:'custom' }
-        ];
-        localStorage.setItem(META_KEY, JSON.stringify(inventoriesMeta));
-      } else {
-        if (!inventoriesMeta.some(x => x.id === 'main')) {
-          inventoriesMeta.unshift({ id:'main', name:'الأساسي', type:'legacy-main' });
-        }
-        const go = inventoriesMeta.find(x => x.id === GO_ID);
-        if (!go) inventoriesMeta.push({ id:GO_ID, name:'Go', type:'legacy-gemini' });
-        else { go.name = 'Go'; go.type = 'legacy-gemini'; }
-
-        if (!inventoriesMeta.some(x => x.id === NEW_GEMINI_ID)) {
-          inventoriesMeta.push({ id:NEW_GEMINI_ID, name:'Gemini', type:'custom' });
-        }
-        localStorage.setItem(META_KEY, JSON.stringify(inventoriesMeta));
+        updateUI();
+        cloudSaveDebounced();
+        return { addedCount, duplicateCount, invalidCount };
       }
 
-      const savedActive = localStorage.getItem(ACTIVE_KEY);
-      if (savedActive && inventoriesMeta.some(x => x.id === savedActive)) {
-        activeInvId = savedActive;
-      } else {
-        activeInvId = 'main';
-        localStorage.setItem(ACTIVE_KEY, activeInvId);
-      }
+      function addToStock() {
+        flash(addBtn);
+        const standard = bulkInputEl.value;
+        if (!standard.trim()) { showToast('الحقل فارغ!', 'error'); return; }
+        const { addedCount, duplicateCount, invalidCount } = addToStockInternal(standard);
+        bulkInputEl.value = '';
 
-      inventoriesMeta.forEach(m => {
-        if (!store[m.id]) store[m.id] = { inventory: [], pulledCounter: 0, currentAccount: null };
-      });
-    }
-
-    function updateHeaderTitle(){
-      titleNameEl.textContent = 'المخزون';
-    }
-
-    function buildTabs(){
-      tabsWrap.innerHTML = '';
-      for (const inv of inventoriesMeta) {
-        const btn = document.createElement('button');
-        btn.className = "press-glow soft tab-pill px-4 py-2 rounded-2xl text-sm font-bold text-slate-100";
-        if (inv.id === activeInvId) btn.classList.add('tab-active');
-
-        let icon = 'fa-layer-group';
-        let iconColor = 'text-blue-300';
-        if (inv.id === GO_ID) { icon = 'fa-bolt'; iconColor = 'text-emerald-300'; }
-        if (inv.id === NEW_GEMINI_ID) { icon = 'fa-wand-magic-sparkles'; iconColor = 'text-sky-300'; }
-        if (inv.id !== 'main' && inv.id !== GO_ID && inv.id !== NEW_GEMINI_ID) { icon = 'fa-box'; iconColor = 'text-amber-300'; }
-
-        btn.innerHTML = `<i class="fa-solid ${icon} ml-2 ${iconColor}"></i>${inv.name}`;
-        btn.addEventListener('click', () => setActiveInventory(inv.id));
-        tabsWrap.appendChild(btn);
-      }
-    }
-
-    function setStockCounterColor(stockLen) {
-      if (stockLen === 0) stockCountEl.className = "text-2xl font-extrabold text-red-400";
-      else if (stockLen < 5) stockCountEl.className = "text-2xl font-extrabold text-amber-300";
-      else stockCountEl.className = "text-2xl font-extrabold text-emerald-300";
-    }
-
-    function displayResult(acc) {
-      if (!acc) return;
-      resultAreaEl.classList.remove('hidden');
-      emailDisplayEl.textContent = acc.email || '---';
-      passDisplayEl.textContent = acc.password || '---';
-      recDisplayEl.textContent = acc.recovery || 'غير متوفر';
-      urlBtnEl.href = acc.url && acc.url !== '' ? acc.url : '#';
-      timestampEl.textContent = new Date().toLocaleTimeString('ar-IQ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    }
-
-    function updateUI() {
-      const s = S();
-      stockCountEl.textContent = s.inventory.length;
-      pulledCountEl.textContent = s.pulledCounter;
-      setStockCounterColor(s.inventory.length);
-
-      const last = s.currentAccount || getLastPulled(activeInvId);
-      if (last) {
-        s.currentAccount = last;
-        displayResult(last);
-      } else {
-        resultAreaEl.classList.add('hidden');
-      }
-    }
-
-    function setActiveInventory(id){
-      if (!inventoriesMeta.some(x => x.id === id)) return;
-      activeInvId = id;
-      localStorage.setItem(ACTIVE_KEY, id);
-
-      loadActive();
-      updateHeaderTitle();
-      buildTabs();
-      updateUI();
-      renderMoveButtons();
-
-      cloudSaveDebounced(); // ✅
-    }
-
-    function createNewInventory(){
-      flash(addInvBtn);
-      const name = prompt('اكتب اسم المخزون الجديد:');
-      if (!name || !String(name).trim()) { showToast('تم الإلغاء (اسم المخزون فارغ).', 'error'); return; }
-      const n = String(name).trim();
-      if (inventoriesMeta.some(x => x.name === n)) { showToast('هذا الاسم موجود بالفعل. اختر اسم مختلف.', 'error'); return; }
-
-      const id = 'inv_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7);
-      inventoriesMeta.push({ id, name: n, type:'custom' });
-      localStorage.setItem(META_KEY, JSON.stringify(inventoriesMeta));
-      store[id] = { inventory: [], pulledCounter: 0, currentAccount: null };
-
-      buildTabs();
-      setActiveInventory(id);
-      showToast('تم إنشاء مخزون جديد ✅', 'success');
-
-      cloudSaveDebounced(); // ✅
-    }
-
-    function parseStandardLine(line) {
-      const parts = line.split(';').map(p => p.trim());
-      if (parts.length < 2) return { ok: false };
-      const email = parts[0];
-      const password = parts[1];
-      const recovery = parts[2] || "غير متوفر";
-      const url = parts[3] || "#";
-      if (!email || !password) return { ok: false };
-      return { ok: true, acc: { email, password, recovery, url } };
-    }
-
-    function addToStockInternal(standardText) {
-      const s = S();
-      const stdLines = (standardText || '').replace(/\r/g, '').split('\n').map(l => l.trim()).filter(l => l.length >= 5);
-
-      let addedCount = 0, duplicateCount = 0, invalidCount = 0;
-
-      function existsEmail(email){ return s.inventory.some(a => a.email === email); }
-
-      for (const line of stdLines) {
-        const parsed = parseStandardLine(line);
-        if (!parsed.ok) { invalidCount++; continue; }
-        const acc = parsed.acc;
-        if (existsEmail(acc.email)) { duplicateCount++; continue; }
-        s.inventory.push(acc); addedCount++;
-      }
-
-      saveActive();
-      updateUI();
-      return { addedCount, duplicateCount, invalidCount };
-    }
-
-    function addToStock() {
-      flash(addBtn);
-      const standard = bulkInputEl.value;
-      if (!standard.trim()) { showToast('الحقل فارغ!', 'error'); return; }
-      const { addedCount, duplicateCount, invalidCount } = addToStockInternal(standard);
-      bulkInputEl.value = '';
-
-      const tabName = getInvMetaById(activeInvId)?.name || 'المخزون';
-      let msg = `(${tabName}) تمت إضافة ${addedCount} حساب.`;
-      if (duplicateCount) msg += ` (مكرر: ${duplicateCount})`;
-      if (invalidCount) msg += ` (غير صالح: ${invalidCount})`;
-      showToast(msg, addedCount ? 'success' : 'error');
-    }
-
-    function pullAccount() {
-      flash(pullBtn);
-      const s = S();
-      if (s.inventory.length === 0) { showToast('المخزون فارغ.', 'error'); return; }
-      const acc = s.inventory.splice(0, 1)[0];
-      s.currentAccount = acc;
-      s.pulledCounter++;
-      saveActive();
-      displayResult(acc);
-      updateUI();
-      showToast('تم سحب الحساب بنجاح', 'success');
-    }
-
-    function clearStorage() {
-      flash(clearBtn);
-      const tabName = getInvMetaById(activeInvId)?.name || 'المخزون';
-      if (!confirm(`هل أنت متأكد من حذف مخزون (${tabName}) بالكامل؟`)) return;
-
-      const s = S();
-      s.inventory = [];
-      s.pulledCounter = 0;
-      s.currentAccount = null;
-
-      const keys = K();
-      localStorage.removeItem(keys.data);
-      localStorage.removeItem(keys.pulled);
-      localStorage.removeItem(keys.last);
-      localStorage.removeItem(keys.undo);
-
-      updateUI();
-      cloudSaveDebounced(); // ✅
-      showToast('تم تصفير المخزون', 'success');
-    }
-
-    async function copyField(type) {
-      const s = S();
-      const acc = s.currentAccount || getLastPulled(activeInvId);
-      if (!acc) { showToast('لا يوجد حساب مسحوب للنسخ.', 'error'); return; }
-      let text = '', label = '';
-      if (type === 'email') { text = acc.email; label = 'الإيميل'; }
-      else if (type === 'password') { text = acc.password; label = 'الباسورد'; }
-      else { text = acc.recovery; label = 'التحقق'; }
-      const ok = await copyText(String(text || ''));
-      showToast(ok ? `تم نسخ ${label}` : 'فشل النسخ (جرّب HTTPS أو localhost)', ok ? 'copy' : 'error');
-    }
-
-    async function copyFullCombo() {
-      flash(copyFullBtn);
-      const s = S();
-      const acc = s.currentAccount || getLastPulled(activeInvId);
-      if (!acc) { showToast('لا يوجد حساب مسحوب لنسخ المعلومات.', 'error'); return; }
-
-      const textToCopy =
-        `الايميل: ${acc.email}\n` +
-        `الباسورد: ${acc.password}\n` +
-        `التحقق: ${acc.recovery}\n` +
-        `رابط الرسائل: ${acc.url || "#"}`;
-
-      const ok = await copyText(textToCopy);
-      showToast(ok ? 'تم نسخ المعلومات كاملة' : 'فشل النسخ (جرّب HTTPS أو localhost)', ok ? 'success' : 'error');
-    }
-
-    function deleteLastPulled() {
-      flash(deleteLastBtn);
-      const s = S();
-      const acc = s.currentAccount || getLastPulled(activeInvId);
-      if (!acc) { showToast('لا يوجد حساب مسحوب.', 'error'); return; }
-      s.currentAccount = null;
-      clearLastPulled(activeInvId);
-      saveActive();
-      resultAreaEl.classList.add('hidden');
-      showToast('تم حذف الحساب من الشاشة', 'success');
-    }
-
-    function restoreLastPulled() {
-      flash(restoreBtn);
-      const s = S();
-      const acc = s.currentAccount || getLastPulled(activeInvId);
-      if (!acc) { showToast('لا يوجد حساب مسحوب للاسترجاع.', 'error'); return; }
-      if (!s.inventory.some(a => a.email === acc.email)) s.inventory.unshift(acc);
-      if (s.pulledCounter > 0) s.pulledCounter--;
-      s.currentAccount = null;
-      clearLastPulled(activeInvId);
-      saveActive();
-      updateUI();
-      showToast('تم استرجاع الحساب إلى المخزون', 'success');
-    }
-
-    function moveAccountTo(targetInvId, targetLabel){
-      if (activeInvId !== 'main') { showToast('أزرار النقل تعمل من (الأساسي) فقط.', 'error'); return; }
-
-      const sMain = store['main'] || S();
-      const acc = sMain.currentAccount || getLastPulled('main');
-      if (!acc) { showToast('لا يوجد حساب مسحوب للنقل.', 'error'); return; }
-
-      if (!store[targetInvId]) store[targetInvId] = { inventory: [], pulledCounter: 0, currentAccount: null };
-
-      const prevActive = activeInvId;
-
-      activeInvId = targetInvId;
-      loadActive();
-      const sTarget = store[targetInvId];
-
-      if (sTarget.inventory.some(a => a.email === acc.email)) {
-        activeInvId = prevActive;
-        showToast(`هذا الحساب موجود بالفعل في مخزون ${targetLabel} (تم منع التكرار).`, 'error');
-        return;
-      }
-
-      sTarget.inventory.unshift(acc);
-      activeInvId = targetInvId;
-      saveActive();
-
-      sMain.currentAccount = null;
-      clearLastPulled('main');
-
-      activeInvId = 'main';
-      saveActive();
-
-      activeInvId = prevActive;
-      updateUI();
-
-      showToast(`تم نقل الحساب إلى مخزون ${targetLabel}`, 'success');
-    }
-
-    function renderMoveButtons(){
-      moveButtonsWrap.innerHTML = '';
-      if (activeInvId !== 'main') return;
-
-      const targets = inventoriesMeta.filter(x => x.id !== 'main');
-      if (!targets.length) return;
-
-      for (const t of targets) {
-        const btn = document.createElement('button');
-        btn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2";
-        btn.innerHTML = `<i class="fa-solid fa-right-left text-slate-200"></i><span>النقل إلى ${t.name}</span>`;
-        btn.addEventListener('click', () => moveAccountTo(t.id, t.name));
-        moveButtonsWrap.appendChild(btn);
-      }
-    }
-
-    async function importTxtFile(file) {
-      if (!file) return;
-      flash(importBtn);
-      if (!file.name.toLowerCase().endsWith('.txt')) { showToast('الرجاء اختيار ملف TXT فقط', 'error'); return; }
-      try {
-        const content = await file.text();
-        const { addedCount, duplicateCount, invalidCount } = addToStockInternal(content);
-        let msg = `تم استيراد الملف: +${addedCount}`;
+        const tabName = inventoriesMeta.find(x=>x.id===activeInvId)?.name || 'المخزون';
+        let msg = `(${tabName}) تمت إضافة ${addedCount} حساب.`;
         if (duplicateCount) msg += ` (مكرر: ${duplicateCount})`;
         if (invalidCount) msg += ` (غير صالح: ${invalidCount})`;
         showToast(msg, addedCount ? 'success' : 'error');
-      } catch (e) { showToast('فشل قراءة الملف', 'error'); }
-    }
-
-    function exportStockToTxt() {
-      flash(exportBtn);
-      const s = S();
-      if (!s.inventory.length) { showToast('المخزون فارغ.', 'error'); return; }
-      const content = s.inventory.map(acc => `${acc.email};${acc.password};${acc.recovery};${acc.url}`).join('\n');
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-
-      const meta = getInvMetaById(activeInvId);
-      const safeName = (meta?.name || 'inventory').replace(/[^\w\u0600-\u06FF]+/g,'_');
-
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${safeName}_${new Date().toISOString().slice(0,10)}.txt`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      showToast(`تم تصدير ${s.inventory.length} حساب`, 'success');
-    }
-
-    // ===== Settings modal =====
-    function openSettings(){
-      flash(settingsBtn);
-      renderSettingsInventories();
-      settingsModal.classList.add('show');
-      document.body.classList.add('modal-open');
-    }
-    function closeSettings(){
-      settingsModal.classList.remove('show');
-      document.body.classList.remove('modal-open');
-    }
-
-    function deleteInventory(invId){
-      const meta = getInvMetaById(invId);
-      if (!meta) return;
-      if (!confirm(`هل تريد حذف مخزون: (${meta.name}) من التخزين؟\nهذا سيحذف الإيميلات والعدادات الخاصة به فقط.`)) return;
-
-      const keys = keysFor(invId);
-      localStorage.removeItem(keys.data);
-      localStorage.removeItem(keys.pulled);
-      localStorage.removeItem(keys.last);
-      localStorage.removeItem(keys.undo);
-
-      inventoriesMeta = inventoriesMeta.filter(x => x.id !== invId);
-
-      if (!inventoriesMeta.some(x => x.id === 'main')) inventoriesMeta.unshift({ id:'main', name:'الأساسي', type:'legacy-main' });
-
-      const go = inventoriesMeta.find(x => x.id === GO_ID);
-      if (!go) inventoriesMeta.push({ id:GO_ID, name:'Go', type:'legacy-gemini' });
-      else { go.name='Go'; go.type='legacy-gemini'; }
-
-      if (!inventoriesMeta.some(x => x.id === NEW_GEMINI_ID)) inventoriesMeta.push({ id:NEW_GEMINI_ID, name:'Gemini', type:'custom' });
-
-      localStorage.setItem(META_KEY, JSON.stringify(inventoriesMeta));
-
-      if (activeInvId === invId) {
-        activeInvId = inventoriesMeta[0].id;
-        localStorage.setItem(ACTIVE_KEY, activeInvId);
       }
 
-      delete store[invId];
+      function pullAccount() {
+        flash(pullBtn);
+        const s = S();
+        if (s.inventory.length === 0) { showToast('المخزون فارغ.', 'error'); return; }
+        const acc = s.inventory.splice(0, 1)[0];
+        s.currentAccount = acc;
+        s.pulledCounter++;
+        displayResult(acc);
+        updateUI();
+        cloudSaveDebounced();
+        showToast('تم سحب الحساب بنجاح', 'success');
+      }
+
+      function clearStorage() {
+        flash(clearBtn);
+        const tabName = inventoriesMeta.find(x=>x.id===activeInvId)?.name || 'المخزون';
+        if (!confirm(`هل أنت متأكد من حذف مخزون (${tabName}) بالكامل؟`)) return;
+
+        const s = S();
+        s.inventory = [];
+        s.pulledCounter = 0;
+        s.currentAccount = null;
+
+        updateUI();
+        cloudSaveDebounced();
+        showToast('تم تصفير المخزون', 'success');
+      }
+
+      async function copyField(type) {
+        const s = S();
+        const acc = s.currentAccount;
+        if (!acc) { showToast('لا يوجد حساب مسحوب للنسخ.', 'error'); return; }
+        let text = '', label = '';
+        if (type === 'email') { text = acc.email; label = 'الإيميل'; }
+        else if (type === 'password') { text = acc.password; label = 'الباسورد'; }
+        else { text = acc.recovery; label = 'التحقق'; }
+        const ok = await copyText(String(text || ''));
+        showToast(ok ? `تم نسخ ${label}` : 'فشل النسخ', ok ? 'copy' : 'error');
+      }
+
+      async function copyFullCombo() {
+        flash(copyFullBtn);
+        const s = S();
+        const acc = s.currentAccount;
+        if (!acc) { showToast('لا يوجد حساب مسحوب لنسخ المعلومات.', 'error'); return; }
+
+        const textToCopy =
+          `الايميل: ${acc.email}\n` +
+          `الباسورد: ${acc.password}\n` +
+          `التحقق: ${acc.recovery}\n` +
+          `رابط الرسائل: ${acc.url || "#"}`;
+
+        const ok = await copyText(textToCopy);
+        showToast(ok ? 'تم نسخ المعلومات كاملة' : 'فشل النسخ', ok ? 'success' : 'error');
+      }
+
+      function deleteLastPulled() {
+        flash(deleteLastBtn);
+        const s = S();
+        if (!s.currentAccount) { showToast('لا يوجد حساب مسحوب.', 'error'); return; }
+        s.currentAccount = null;
+        updateUI();
+        cloudSaveDebounced();
+        showToast('تم حذف الحساب من الشاشة', 'success');
+      }
+
+      function restoreLastPulled() {
+        flash(restoreBtn);
+        const s = S();
+        const acc = s.currentAccount;
+        if (!acc) { showToast('لا يوجد حساب مسحوب للاسترجاع.', 'error'); return; }
+        if (!s.inventory.some(a => a.email === acc.email)) s.inventory.unshift(acc);
+        if (s.pulledCounter > 0) s.pulledCounter--;
+        s.currentAccount = null;
+        updateUI();
+        cloudSaveDebounced();
+        showToast('تم استرجاع الحساب إلى المخزون', 'success');
+      }
+
+      function moveAccountTo(targetInvId, targetLabel){
+        if (activeInvId !== 'main') { showToast('أزرار النقل تعمل من (الأساسي) فقط.', 'error'); return; }
+        const sMain = store['main'];
+        const acc = sMain.currentAccount;
+        if (!acc) { showToast('لا يوجد حساب مسحوب للنقل.', 'error'); return; }
+
+        if (!store[targetInvId]) store[targetInvId] = { inventory: [], pulledCounter: 0, currentAccount: null };
+        const sTarget = store[targetInvId];
+
+        if (sTarget.inventory.some(a => a.email === acc.email)) {
+          showToast(`هذا الحساب موجود بالفعل في مخزون ${targetLabel}.`, 'error');
+          return;
+        }
+
+        sTarget.inventory.unshift(acc);
+        sMain.currentAccount = null;
+
+        updateUI();
+        cloudSaveDebounced();
+        showToast(`تم نقل الحساب إلى مخزون ${targetLabel}`, 'success');
+      }
+
+      function renderMoveButtons(){
+        moveButtonsWrap.innerHTML = '';
+        if (activeInvId !== 'main') return;
+
+        const targets = inventoriesMeta.filter(x => x.id !== 'main');
+        if (!targets.length) return;
+
+        for (const t of targets) {
+          const btn = document.createElement('button');
+          btn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold py-3 rounded-2xl flex items-center justify-center gap-2";
+          btn.innerHTML = `<i class="fa-solid fa-right-left text-slate-200"></i><span>النقل إلى ${t.name}</span>`;
+          btn.addEventListener('click', () => moveAccountTo(t.id, t.name));
+          moveButtonsWrap.appendChild(btn);
+        }
+      }
+
+      async function importTxtFile(file) {
+        if (!file) return;
+        flash(importBtn);
+        if (!file.name.toLowerCase().endsWith('.txt')) { showToast('الرجاء اختيار ملف TXT فقط', 'error'); return; }
+        try {
+          const content = await file.text();
+          const { addedCount, duplicateCount, invalidCount } = addToStockInternal(content);
+          let msg = `تم استيراد الملف: +${addedCount}`;
+          if (duplicateCount) msg += ` (مكرر: ${duplicateCount})`;
+          if (invalidCount) msg += ` (غير صالح: ${invalidCount})`;
+          showToast(msg, addedCount ? 'success' : 'error');
+        } catch (e) { showToast('فشل قراءة الملف', 'error'); }
+      }
+
+      function exportStockToTxt() {
+        flash(exportBtn);
+        const s = S();
+        if (!s.inventory.length) { showToast('المخزون فارغ.', 'error'); return; }
+        const content = s.inventory.map(acc => `${acc.email};${acc.password};${acc.recovery};${acc.url}`).join('\n');
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+
+        const meta = inventoriesMeta.find(x=>x.id===activeInvId);
+        const safeName = (meta?.name || 'inventory').replace(/[^\w\u0600-\u06FF]+/g,'_');
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${safeName}_${new Date().toISOString().slice(0,10)}.txt`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        showToast(`تم تصدير ${s.inventory.length} حساب`, 'success');
+      }
+
+      // Settings modal
+      function openSettings(){
+        flash(settingsBtn);
+        renderSettingsInventories();
+        settingsModal.classList.add('show');
+        document.body.classList.add('modal-open');
+      }
+      function closeSettings(){
+        settingsModal.classList.remove('show');
+        document.body.classList.remove('modal-open');
+      }
+
+      function deleteInventory(invId){
+        const meta = inventoriesMeta.find(x=>x.id===invId);
+        if (!meta) return;
+        if (!confirm(`هل تريد حذف مخزون: (${meta.name}) من السحابة؟`)) return;
+
+        delete store[invId];
+        inventoriesMeta = inventoriesMeta.filter(x => x.id !== invId);
+
+        if (activeInvId === invId) activeInvId = 'main';
+
+        buildTabs();
+        setActiveInventory(activeInvId);
+        renderSettingsInventories();
+        cloudSaveDebounced();
+        showToast('تم حذف المخزون ✅', 'success');
+      }
+
+      function renderSettingsInventories(){
+        invListWrap.innerHTML = '';
+        for (const inv of inventoriesMeta) {
+          const row = document.createElement('div');
+          row.className = "flex flex-col md:flex-row gap-2 md:items-center md:justify-between bg-slate-950/25 border border-slate-700/40 rounded-2xl p-3";
+
+          const left = document.createElement('div');
+          left.className = "text-sm text-slate-100";
+          left.innerHTML = `<div class="font-extrabold">${inv.name}</div><div class="text-xs text-slate-300">ID: ${inv.id}</div>`;
+
+          const right = document.createElement('div');
+          right.className = "flex gap-2";
+
+          const switchBtn = document.createElement('button');
+          switchBtn.className = "press-glow soft bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-4 py-2 rounded-2xl text-sm";
+          switchBtn.innerHTML = `<i class="fa-solid fa-arrow-right-arrow-left ml-2 text-slate-200"></i>فتح`;
+          switchBtn.addEventListener('click', () => { setActiveInventory(inv.id); closeSettings(); });
+
+          const delBtn = document.createElement('button');
+          delBtn.className = "press-glow soft bg-red-700/20 hover:bg-red-700/28 border border-red-700/30 text-red-100 font-bold px-4 py-2 rounded-2xl text-sm";
+          delBtn.innerHTML = `<i class="fa-solid fa-trash ml-2 text-red-300"></i>حذف`;
+          delBtn.addEventListener('click', () => deleteInventory(inv.id));
+
+          right.appendChild(switchBtn);
+          right.appendChild(delBtn);
+
+          row.appendChild(left);
+          row.appendChild(right);
+          invListWrap.appendChild(row);
+        }
+      }
+
+      // Links
+      function openLinks(){
+        flash(linksBtn);
+        renderLinks();
+        linksModal.classList.add('show');
+        document.body.classList.add('modal-open');
+      }
+      function closeLinks(){
+        linksModal.classList.remove('show');
+        document.body.classList.remove('modal-open');
+      }
+
+      function swapLinks(i, j){
+        if (i < 0 || j < 0) return;
+        if (i >= quickLinks.length || j >= quickLinks.length) return;
+        const tmp = quickLinks[i];
+        quickLinks[i] = quickLinks[j];
+        quickLinks[j] = tmp;
+        cloudSaveDebounced();
+        renderLinks();
+      }
+
+      function removeLinkById(id){
+        const item = quickLinks.find(x => x.id === id);
+        if (!item) return;
+        if (!confirm(`إزالة الرابط: ${item.name} ؟`)) return;
+        quickLinks = quickLinks.filter(x => x.id !== id);
+        cloudSaveDebounced();
+        renderLinks();
+        showToast('تم إزالة الرابط', 'success');
+      }
+
+      function renderLinks(){
+        linksWrap.innerHTML = '';
+
+        for (let idx = 0; idx < quickLinks.length; idx++) {
+          const item = quickLinks[idx];
+
+          const row = document.createElement('div');
+          row.className = "bg-slate-950/20 border border-slate-700/40 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3";
+
+          const left = document.createElement('button');
+          left.className = "min-w-0 text-right flex-1";
+          left.innerHTML = `
+            <div class="font-extrabold text-white truncate hover:underline" title="اضغط للنسخ">${item.name || 'رابط'}</div>
+            <div class="text-xs text-slate-300 mt-1 break-words">${item.url || ''}</div>
+          `;
+          left.addEventListener('click', async () => {
+            const ok = await copyText(String(item.url || ''));
+            showToast(ok ? 'تم نسخ الرابط' : 'فشل النسخ', ok ? 'copy' : 'error');
+          });
+
+          const right = document.createElement('div');
+          right.className = "flex gap-2 flex-shrink-0 flex-wrap justify-start sm:justify-end";
+
+          const upBtn = document.createElement('button');
+          upBtn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-3 py-2 rounded-2xl text-sm";
+          upBtn.textContent = '↑';
+          upBtn.disabled = idx === 0;
+          upBtn.style.opacity = idx === 0 ? '.45' : '1';
+          upBtn.addEventListener('click', () => swapLinks(idx, idx - 1));
+
+          const downBtn = document.createElement('button');
+          downBtn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-3 py-2 rounded-2xl text-sm";
+          downBtn.textContent = '↓';
+          downBtn.disabled = idx === quickLinks.length - 1;
+          downBtn.style.opacity = idx === quickLinks.length - 1 ? '.45' : '1';
+          downBtn.addEventListener('click', () => swapLinks(idx, idx + 1));
+
+          const openBtn = document.createElement('button');
+          openBtn.className = "press-glow soft bg-emerald-700/20 hover:bg-emerald-700/28 border border-emerald-700/30 text-emerald-100 font-bold px-4 py-2 rounded-2xl text-sm";
+          openBtn.textContent = 'فتح';
+          openBtn.addEventListener('click', () => {
+            const u = item.url || '';
+            if(!u) return;
+            window.open(u, '_blank', 'noopener');
+          });
+
+          const removeBtn = document.createElement('button');
+          removeBtn.className = "press-glow soft bg-red-700/20 hover:bg-red-700/28 border border-red-700/30 text-red-100 font-bold px-4 py-2 rounded-2xl text-sm";
+          removeBtn.textContent = 'إزالة';
+          removeBtn.addEventListener('click', () => removeLinkById(item.id));
+
+          right.appendChild(upBtn);
+          right.appendChild(downBtn);
+          right.appendChild(openBtn);
+          right.appendChild(removeBtn);
+
+          row.appendChild(left);
+          row.appendChild(right);
+          linksWrap.appendChild(row);
+        }
+      }
+
+      function addLink(){
+        flash(addLinkBtn);
+        const name = prompt('اسم الرابط:');
+        if (!name || !String(name).trim()) { showToast('تم الإلغاء (الاسم فارغ).', 'error'); return; }
+        const urlIn = prompt('الرابط:');
+        if (!urlIn || !String(urlIn).trim()) { showToast('تم الإلغاء (الرابط فارغ).', 'error'); return; }
+        const url = normalizeUrl(urlIn);
+        if (!url) { showToast('الرابط غير صحيح.', 'error'); return; }
+
+        const id = 'l_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6);
+        quickLinks.push({ id, name: String(name).trim(), url });
+        cloudSaveDebounced();
+        renderLinks();
+        showToast('تمت إضافة الرابط ✅', 'success');
+      }
+
+      // Events
+      toggleBtn.addEventListener('click', () => { flash(toggleBtn); inputSectionEl.classList.toggle('hidden'); });
+      clearBtn.addEventListener('click', clearStorage);
+      addBtn.addEventListener('click', addToStock);
+      pullBtn.addEventListener('click', pullAccount);
+      copyFullBtn.addEventListener('click', copyFullCombo);
+
+      restoreBtn.addEventListener('click', restoreLastPulled);
+      deleteLastBtn.addEventListener('click', deleteLastPulled);
+
+      importBtn.addEventListener('click', () => { flash(importBtn); importFile.click(); });
+      importFile.addEventListener('change', async () => {
+        const file = importFile.files && importFile.files[0] ? importFile.files[0] : null;
+        await importTxtFile(file);
+        importFile.value = '';
+      });
+
+      exportBtn.addEventListener('click', exportStockToTxt);
+
+      document.querySelectorAll('[data-copy]').forEach(card => {
+        card.addEventListener('click', () => { flash(card); copyField(card.getAttribute('data-copy')); });
+      });
+
+      addInvBtn.addEventListener('click', createNewInventory);
+
+      settingsBtn.addEventListener('click', openSettings);
+      closeSettingsBtn.addEventListener('click', closeSettings);
+      settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
+
+      linksBtn.addEventListener('click', openLinks);
+      closeLinksBtn.addEventListener('click', closeLinks);
+      addLinkBtn.addEventListener('click', addLink);
+      linksModal.addEventListener('click', (e) => { if (e.target === linksModal) closeLinks(); });
+
+      // Auth buttons
+      registerBtn.addEventListener('click', async () => {
+        const em = String(authEmail.value||'').trim();
+        const pw = String(authPass.value||'').trim();
+        if(!em || !pw){ showToast('اكتب ايميل وباسورد', 'error'); return; }
+        try{
+          await auth.createUserWithEmailAndPassword(em, pw);
+          showToast('تم إنشاء الحساب ✅', 'success');
+        }catch(e){
+          showToast('فشل إنشاء الحساب (يمكن الحساب موجود)', 'error');
+        }
+      });
+
+      loginBtn.addEventListener('click', async () => {
+        const em = String(authEmail.value||'').trim();
+        const pw = String(authPass.value||'').trim();
+        if(!em || !pw){ showToast('اكتب ايميل وباسورد', 'error'); return; }
+        try{
+          await auth.signInWithEmailAndPassword(em, pw);
+          showToast('تم تسجيل الدخول ✅', 'success');
+        }catch(e){
+          showToast('فشل تسجيل الدخول (تأكد من البيانات)', 'error');
+        }
+      });
+
+      logoutBtn.addEventListener('click', async () => {
+        try{
+          await auth.signOut();
+          showToast('تم تسجيل الخروج', 'success');
+        }catch(e){
+          showToast('فشل تسجيل الخروج', 'error');
+        }
+      });
+
+      function openAuth(){
+        authModal.classList.add('show');
+        document.body.classList.add('modal-open');
+      }
+      function closeAuth(){
+        authModal.classList.remove('show');
+        document.body.classList.remove('modal-open');
+      }
+
+      // Init + Auth state
+      auth.onAuthStateChanged(async (user) => {
+        currentUser = user || null;
+
+        if(!currentUser){
+          userLabel.textContent = '---';
+          cloudStatus.textContent = 'غير متصل';
+          cloudStatus.className = 'font-bold text-amber-300';
+          openAuth();
+          return;
+        }
+
+        // logged in
+        userLabel.textContent = (currentUser.email || currentUser.uid).slice(0, 32);
+        closeAuth();
+
+        // أول مرة: إذا ماكو بيانات بالسحابة، نخزن افتراضي
+        try{
+          const snap = await userDocRef(currentUser.uid).get();
+          if(!snap.exists){
+            await cloudSave(buildCloudState());
+          }else{
+            applyCloudState(snap.data());
+          }
+        }catch(e){
+          showToast('تعذر قراءة بيانات السحابة (Rules)', 'error');
+        }
+
+        startRealtime();
+        buildTabs();
+        setActiveInventory(activeInvId, true);
+        updateUI();
+        renderMoveButtons();
+      });
+
+      // ===== Snow =====
+      const canvas = document.getElementById('snowCanvas');
+      const ctx = canvas.getContext('2d', { alpha: true });
+      let W = 0, H = 0;
+
+      function resize(){
+        W = canvas.width = window.innerWidth;
+        H = canvas.height = window.innerHeight;
+      }
+      window.addEventListener('resize', resize, { passive:true });
+      resize();
+
+      const flakes = Array.from({ length: 55 }, () => ({
+        x: Math.random()*W,
+        y: Math.random()*H,
+        r: 0.6 + Math.random()*1.6,
+        v: 0.25 + Math.random()*0.9,
+        drift: (Math.random()*0.6) - 0.3,
+        a: 0.12 + Math.random()*0.20
+      }));
+
+      function snowTick(){
+        ctx.clearRect(0,0,W,H);
+        for(const f of flakes){
+          f.y += f.v;
+          f.x += f.drift;
+
+          if (f.y > H + 5) { f.y = -5; f.x = Math.random()*W; }
+          if (f.x > W + 5) f.x = -5;
+          if (f.x < -5) f.x = W + 5;
+
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+          ctx.closePath();
+          ctx.fillStyle = `rgba(255,255,255,${f.a})`;
+          ctx.fill();
+        }
+        requestAnimationFrame(snowTick);
+      }
+      snowTick();
+
+      // افتراضي UI
+      updateHeaderTitle();
       buildTabs();
-      setActiveInventory(activeInvId);
-      renderSettingsInventories();
-      cloudSaveDebounced(); // ✅
-      showToast('تم حذف المخزون ✅', 'success');
-    }
-
-    function renderSettingsInventories(){
-      invListWrap.innerHTML = '';
-      for (const inv of inventoriesMeta) {
-        const row = document.createElement('div');
-        row.className = "flex flex-col md:flex-row gap-2 md:items-center md:justify-between bg-slate-950/25 border border-slate-700/40 rounded-2xl p-3";
-
-        const left = document.createElement('div');
-        left.className = "text-sm text-slate-100";
-        left.innerHTML = `<div class="font-extrabold">${inv.name}</div><div class="text-xs text-slate-300">ID: ${inv.id}</div>`;
-
-        const right = document.createElement('div');
-        right.className = "flex gap-2";
-
-        const switchBtn = document.createElement('button');
-        switchBtn.className = "press-glow soft bg-slate-800/60 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-4 py-2 rounded-2xl text-sm";
-        switchBtn.innerHTML = `<i class="fa-solid fa-arrow-right-arrow-left ml-2 text-slate-200"></i>فتح`;
-        switchBtn.addEventListener('click', () => { setActiveInventory(inv.id); closeSettings(); });
-
-        const delBtn = document.createElement('button');
-        delBtn.className = "press-glow soft bg-red-700/20 hover:bg-red-700/28 border border-red-700/30 text-red-100 font-bold px-4 py-2 rounded-2xl text-sm";
-        delBtn.innerHTML = `<i class="fa-solid fa-trash ml-2 text-red-300"></i>حذف`;
-        delBtn.addEventListener('click', () => deleteInventory(inv.id));
-
-        right.appendChild(switchBtn);
-        right.appendChild(delBtn);
-
-        row.appendChild(left);
-        row.appendChild(right);
-        invListWrap.appendChild(row);
-      }
-    }
-
-    // ===== Links =====
-    function loadLinks(){
-      const raw = localStorage.getItem(LINKS_KEY);
-      quickLinks = raw ? safeJsonParse(raw, []) : [];
-      if (!Array.isArray(quickLinks)) quickLinks = [];
-
-      if (!quickLinks.length) {
-        quickLinks = [
-          { id:'l1', name:'التحقق من ChatGPT', url:'https://batch.1key.me/' },
-          { id:'l2', name:'بوت التحقق', url:'https://t.me/Veriyferbot' }
-        ];
-        saveLinks();
-      }
-    }
-    function saveLinks(){ localStorage.setItem(LINKS_KEY, JSON.stringify(quickLinks)); cloudSaveDebounced(); }
-
-    function openLinks(){
-      flash(linksBtn);
-      renderLinks();
-      linksModal.classList.add('show');
-      document.body.classList.add('modal-open');
-    }
-    function closeLinks(){
-      linksModal.classList.remove('show');
-      document.body.classList.remove('modal-open');
-    }
-
-    function swapLinks(i, j){
-      if (i < 0 || j < 0) return;
-      if (i >= quickLinks.length || j >= quickLinks.length) return;
-      const tmp = quickLinks[i];
-      quickLinks[i] = quickLinks[j];
-      quickLinks[j] = tmp;
-      saveLinks();
-      renderLinks();
-    }
-
-    function removeLinkById(id){
-      const item = quickLinks.find(x => x.id === id);
-      if (!item) return;
-      if (!confirm(`إزالة الرابط: ${item.name} ؟`)) return;
-      quickLinks = quickLinks.filter(x => x.id !== id);
-      saveLinks();
-      renderLinks();
-      showToast('تم إزالة الرابط', 'success');
-    }
-
-    function renderLinks(){
-      linksWrap.innerHTML = '';
-
-      for (let idx = 0; idx < quickLinks.length; idx++) {
-        const item = quickLinks[idx];
-
-        const row = document.createElement('div');
-        row.className = "bg-slate-950/20 border border-slate-700/40 rounded-2xl p-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3";
-
-        const left = document.createElement('button');
-        left.className = "min-w-0 text-right flex-1";
-        left.innerHTML = `
-          <div class="font-extrabold text-white truncate hover:underline" title="اضغط للنسخ">${item.name || 'رابط'}</div>
-          <div class="text-xs text-slate-300 mt-1 break-words">${item.url || ''}</div>
-        `;
-        left.addEventListener('click', async () => {
-          const ok = await copyText(String(item.url || ''));
-          showToast(ok ? 'تم نسخ الرابط' : 'فشل النسخ', ok ? 'copy' : 'error');
-        });
-
-        const right = document.createElement('div');
-        right.className = "flex gap-2 flex-shrink-0 flex-wrap justify-start sm:justify-end";
-
-        const upBtn = document.createElement('button');
-        upBtn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-3 py-2 rounded-2xl text-sm";
-        upBtn.textContent = '↑';
-        upBtn.disabled = idx === 0;
-        upBtn.style.opacity = idx === 0 ? '.45' : '1';
-        upBtn.addEventListener('click', () => swapLinks(idx, idx - 1));
-
-        const downBtn = document.createElement('button');
-        downBtn.className = "press-glow soft bg-slate-800/55 hover:bg-slate-700/60 border border-slate-700/60 text-white font-bold px-3 py-2 rounded-2xl text-sm";
-        downBtn.textContent = '↓';
-        downBtn.disabled = idx === quickLinks.length - 1;
-        downBtn.style.opacity = idx === quickLinks.length - 1 ? '.45' : '1';
-        downBtn.addEventListener('click', () => swapLinks(idx, idx + 1));
-
-        const copyBtn = document.createElement('button');
-        copyBtn.className = "press-glow soft bg-blue-700/20 hover:bg-blue-700/28 border border-blue-700/30 text-blue-100 font-bold px-4 py-2 rounded-2xl text-sm";
-        copyBtn.textContent = 'نسخ';
-        copyBtn.addEventListener('click', async () => {
-          const ok = await copyText(String(item.url || ''));
-          showToast(ok ? 'تم نسخ الرابط' : 'فشل النسخ', ok ? 'copy' : 'error');
-        });
-
-        const openBtn = document.createElement('button');
-        openBtn.className = "press-glow soft bg-emerald-700/20 hover:bg-emerald-700/28 border border-emerald-700/30 text-emerald-100 font-bold px-4 py-2 rounded-2xl text-sm";
-        openBtn.textContent = 'فتح';
-        openBtn.addEventListener('click', () => {
-          const u = item.url || '';
-          if(!u) return;
-          window.open(u, '_blank', 'noopener');
-        });
-
-        const removeBtn = document.createElement('button');
-        removeBtn.className = "press-glow soft bg-red-700/20 hover:bg-red-700/28 border border-red-700/30 text-red-100 font-bold px-4 py-2 rounded-2xl text-sm";
-        removeBtn.textContent = 'إزالة';
-        removeBtn.addEventListener('click', () => removeLinkById(item.id));
-
-        right.appendChild(upBtn);
-        right.appendChild(downBtn);
-        right.appendChild(copyBtn);
-        right.appendChild(openBtn);
-        right.appendChild(removeBtn);
-
-        row.appendChild(left);
-        row.appendChild(right);
-        linksWrap.appendChild(row);
-      }
-    }
-
-    function addLink(){
-      flash(addLinkBtn);
-      const name = prompt('اسم الرابط:');
-      if (!name || !String(name).trim()) { showToast('تم الإلغاء (الاسم فارغ).', 'error'); return; }
-      const urlIn = prompt('الرابط:');
-      if (!urlIn || !String(urlIn).trim()) { showToast('تم الإلغاء (الرابط فارغ).', 'error'); return; }
-      const url = normalizeUrl(urlIn);
-      if (!url) { showToast('الرابط غير صحيح.', 'error'); return; }
-
-      const id = 'l_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,6);
-      quickLinks.push({ id, name: String(name).trim(), url });
-      saveLinks();
-      renderLinks();
-      showToast('تمت إضافة الرابط ✅', 'success');
-    }
-
-    // ===== Events =====
-    toggleBtn.addEventListener('click', () => { flash(toggleBtn); inputSectionEl.classList.toggle('hidden'); });
-    clearBtn.addEventListener('click', clearStorage);
-    addBtn.addEventListener('click', addToStock);
-    pullBtn.addEventListener('click', pullAccount);
-    copyFullBtn.addEventListener('click', copyFullCombo);
-
-    restoreBtn.addEventListener('click', restoreLastPulled);
-    deleteLastBtn.addEventListener('click', deleteLastPulled);
-
-    importBtn.addEventListener('click', () => { flash(importBtn); importFile.click(); });
-    importFile.addEventListener('change', async () => {
-      const file = importFile.files && importFile.files[0] ? importFile.files[0] : null;
-      await importTxtFile(file);
-      importFile.value = '';
-    });
-
-    exportBtn.addEventListener('click', exportStockToTxt);
-
-    document.querySelectorAll('[data-copy]').forEach(card => {
-      card.addEventListener('click', () => { flash(card); copyField(card.getAttribute('data-copy')); });
-    });
-
-    addInvBtn.addEventListener('click', createNewInventory);
-
-    settingsBtn.addEventListener('click', openSettings);
-    closeSettingsBtn.addEventListener('click', closeSettings);
-    settingsModal.addEventListener('click', (e) => { if (e.target === settingsModal) closeSettings(); });
-
-    linksBtn.addEventListener('click', openLinks);
-    closeLinksBtn.addEventListener('click', closeLinks);
-    addLinkBtn.addEventListener('click', addLink);
-    linksModal.addEventListener('click', (e) => { if (e.target === linksModal) closeLinks(); });
-
-    // ===== Init =====
-    window.addEventListener('load', () => {
-      ensureMeta();
-      loadLinks();
-
-      // حمّل كل المخازن مرة
-      for (const inv of inventoriesMeta) {
-        const prev = activeInvId;
-        activeInvId = inv.id;
-        loadActive();
-        activeInvId = prev;
-      }
-
-      buildTabs();
-      setActiveInventory(activeInvId);
-
-      // ✅ Auth bar + Cloud
-      makeAuthBar();
-    });
-
-    // ===== Snow =====
-    const canvas = document.getElementById('snowCanvas');
-    const ctx = canvas.getContext('2d', { alpha: true });
-    let W = 0, H = 0;
-
-    function resize(){
-      W = canvas.width = window.innerWidth;
-      H = canvas.height = window.innerHeight;
-    }
-    window.addEventListener('resize', resize, { passive:true });
-    resize();
-
-    const flakes = Array.from({ length: 55 }, () => ({
-      x: Math.random()*W,
-      y: Math.random()*H,
-      r: 0.6 + Math.random()*1.6,
-      v: 0.25 + Math.random()*0.9,
-      drift: (Math.random()*0.6) - 0.3,
-      a: 0.12 + Math.random()*0.20
-    }));
-
-    function snowTick(){
-      ctx.clearRect(0,0,W,H);
-      for(const f of flakes){
-        f.y += f.v;
-        f.x += f.drift;
-
-        if (f.y > H + 5) { f.y = -5; f.x = Math.random()*W; }
-        if (f.x > W + 5) f.x = -5;
-        if (f.x < -5) f.x = W + 5;
-
-        ctx.beginPath();
-        ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
-        ctx.closePath();
-        ctx.fillStyle = `rgba(255,255,255,${f.a})`;
-        ctx.fill();
-      }
-      requestAnimationFrame(snowTick);
-    }
-    snowTick();
-
-  })();
-</script>
+      updateUI();
+    })();
+  </script>
+</body>
+</html>
